@@ -815,25 +815,3 @@ button:hover { background: #2980b9; }
     height: 0;
     display: none;
 }
-
-/* 실시간 상대 카드 모션 */
-.remote-card-motion { position: fixed; inset: 0; z-index: 14000; pointer-events: none; display: flex; align-items: center; justify-content: center; background: rgba(5,10,20,.25); animation: remote-fade 1.2s ease both; }
-.remote-motion-card { width: 150px; padding: 12px; background: linear-gradient(145deg,#fff,#dfe6e9); color: #2c3e50; border: 3px solid #e74c3c; border-radius: 14px; box-shadow: 0 0 35px 14px rgba(231,76,60,.68); text-align: center; animation: remote-card-cast 1.2s cubic-bezier(.2,.8,.25,1) both; }
-.remote-motion-card img { width: 100%; height: 105px; object-fit: cover; border-radius: 8px; }
-.remote-motion-card b, .remote-motion-card span { display: block; margin-top: 5px; }
-.remote-motion-card span { color: #c0392b; font-weight: 700; }
-.remote-item-hit { animation: remote-item-pulse .7s ease; }
-@keyframes remote-card-cast { 0% { opacity:0; transform: translateY(-170px) scale(.4) rotate(-15deg); } 35% { opacity:1; transform: translateY(0) scale(1.16) rotate(3deg); } 75% { transform: scale(1); } 100% { opacity:0; transform: translateY(80px) scale(.65); } }
-@keyframes remote-item-pulse { 0%,100% { filter:none; } 50% { filter: brightness(1.8); box-shadow: 0 0 30px 14px #f1c40f; } }
-@keyframes remote-fade { 0%,100% { background:rgba(5,10,20,0); } 20%,70% { background:rgba(5,10,20,.3); } }
-
-/* 화면 전체 턴 전환 모션 */
-.turn-splash { position: fixed; inset: 0; z-index: 16000; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; transform: scale(1.2); }
-.turn-splash::before { content:''; position:absolute; inset:0; background:rgba(0,0,0,.72); backdrop-filter: blur(3px); }
-.turn-splash div, .turn-splash strong { position:relative; text-shadow: 0 5px 15px #000; }
-.turn-splash div { color:#fff; font-size:28px; letter-spacing:8px; }
-.turn-splash strong { font-size:74px; margin-top:12px; }
-.turn-splash.mine strong { color:#f1c40f; }
-.turn-splash.enemy strong { color:#e74c3c; }
-.turn-splash.active { animation: turn-splash-show 1.5s ease both; }
-@keyframes turn-splash-show { 0% { opacity:0; transform:scale(1.35); } 22% { opacity:1; transform:scale(1); } 72% { opacity:1; transform:scale(1); } 100% { opacity:0; transform:scale(.9); } }
