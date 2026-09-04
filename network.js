@@ -1,165 +1,80 @@
-let gameMode = 'bot';
-let socket = null;
-let multiplayerRoom = null;
-let multiplayerStarted = false;
-let applyingNetworkState = false;
-let readySent = false;
-
-function ensureMultiplayerUI() {
-  if (document.getElementById('multiplayer-overlay')) return;
-  document.body.insertAdjacentHTML('beforeend', `
-    <div id="multiplayer-overlay">
-      <div class="multiplayer-panel">
-        <h2>온라인 멀티플레이</h2>
-        <p id="multiplayer-status">방을 만들거나 참가하세요.</p>
-        <input id="multiplayer-room-code" maxlength="6" placeholder="방 코드 6자리">
-        <div class="multiplayer-buttons">
-          <button id="create-room-btn">방 만들기</button>
-          <button id="join-room-btn">방 참가</button>
-          <button id="close-multiplayer-btn" class="back-btn">닫기</button>
-        </div>
-      </div>
-    </div>`);
-  document.getElementById('create-room-btn').onclick = createMultiplayerRoom;
-  document.getElementById('join-room-btn').onclick = joinMultiplayerRoom;
-  document.getElementById('close-multiplayer-btn').onclick = closeMultiplayerUI;
+let gameMode = 'bot', socket = null, roomCode = null, multiplayerStarted = false, applyingState = false, readySent = false;
+function showTurnSplash(isMine, first = false) {
+  let el = document.getElementById('turn-splash');
+  if (!el) { el = document.createElement('div'); el.id = 'turn-splash'; document.body.appendChild(el); }
+  el.className = `turn-splash ${isMine ? 'mine' : 'enemy'} active`;
+  el.innerHTML = `<div>${first ? '게임 시작' : '턴 전환'}</div><strong>${isMine ? '내 턴' : '상대 턴'}</strong>`;
+  setTimeout(() => el.classList.remove('active'), 1500);
 }
-
-function installModeButtons() {
-  const menu = document.querySelector('#main-menu .menu-buttons');
-  if (!menu || document.getElementById('multiplayer-menu-btn')) return;
-  const matchmakingButton = [...menu.querySelectorAll('button')].find(b => b.textContent.includes('매치'));
-  if (matchmakingButton) {
-    matchmakingButton.textContent = '봇 대전';
-    matchmakingButton.onclick = () => { gameMode = 'bot'; startMatchmakingProcess(); };
+function showRemoteMotion(data) {
+  const board = document.getElementById('battle-board'); if (!board) return;
+  const effect = document.createElement('div'); effect.className = 'remote-card-motion';
+  effect.innerHTML = `<div class="remote-motion-card"><img src="${data.card?.image || ''}"><b>${data.card?.name || '상대 카드'}</b><span>${data.skill?.name || data.kind || ''}</span></div>`;
+  board.appendChild(effect); setTimeout(() => effect.remove(), 1200);
+  if (data.kind === 'item') {
+    setTimeout(() => {
+      const target = data.targetIndex == null ? null : document.getElementById('opponent-field-slots')?.children[data.targetIndex];
+      target?.classList.add('remote-item-hit'); setTimeout(() => target?.classList.remove('remote-item-hit'), 700);
+    }, 550);
   }
-  const button = document.createElement('button');
-  button.id = 'multiplayer-menu-btn';
-  button.textContent = '온라인 멀티플레이';
-  button.onclick = openMultiplayerUI;
-  menu.appendChild(button);
 }
-
-function connectSocket() {
-  if (socket) return socket;
-  socket = io();
-  socket.on('room:state', applyRoomState);
-  socket.on('room:notice', message => setMultiplayerStatus(message));
-  socket.on('battle:started', () => { multiplayerStarted = true; });
-  socket.on('disconnect', () => setMultiplayerStatus('서버 연결이 끊어졌습니다.'));
-  return socket;
-}
-function openMultiplayerUI() {
+function multiplayerLobby() {
   if (!myDeck.length) return alert('먼저 덱을 구성해주세요.');
-  ensureMultiplayerUI();
-  connectSocket();
-  document.getElementById('multiplayer-overlay').classList.add('active');
-}
-function closeMultiplayerUI() {
-  document.getElementById('multiplayer-overlay')?.classList.remove('active');
-}
-function setMultiplayerStatus(message) {
-  const el = document.getElementById('multiplayer-status');
-  if (el) el.textContent = message;
-}
-function createMultiplayerRoom() {
-  connectSocket().emit('room:create', { name: playerNickname }, result => {
-    if (!result.ok) return setMultiplayerStatus(result.message);
-    multiplayerRoom = result.roomCode;
-    document.getElementById('multiplayer-room-code').value = result.roomCode;
-    setMultiplayerStatus(`방 코드 ${result.roomCode}, 상대를 기다리는 중...`);
-  });
-}
-function joinMultiplayerRoom() {
-  const roomCode = document.getElementById('multiplayer-room-code').value.trim().toUpperCase();
-  connectSocket().emit('room:join', { roomCode, name: playerNickname }, result => {
-    if (!result.ok) return setMultiplayerStatus(result.message);
-    multiplayerRoom = result.roomCode;
-    setMultiplayerStatus(`방 ${result.roomCode}에 참가했습니다.`);
-  });
-}
-function beginMultiplayerBattle() {
-  gameMode = 'multiplayer';
-  multiplayerStarted = false;
-  readySent = false;
-  closeMultiplayerUI();
-  isMyTurn = false;
-  initBattle();
-  opponentField = [];
-  document.getElementById('opponent-name').innerText = '상대 준비 중';
-  document.getElementById('battle-action-info').innerText = '시작 몬스터 1장을 배치하세요. 양쪽 배치 후 선공이 결정됩니다.';
-  renderBattleUI();
-}
-function applyRoomState(state) {
-  multiplayerRoom = state.roomCode;
-  setMultiplayerStatus(`방 코드 ${state.roomCode} · ${state.playerCount}/2명`);
-  if (state.playerCount === 2 && gameMode !== 'multiplayer') beginMultiplayerBattle();
-  if (gameMode !== 'multiplayer') return;
-
-  applyingNetworkState = true;
-  if (state.started) {
-    multiplayerStarted = true;
-    playerField = JSON.parse(JSON.stringify(state.myField || []));
-    opponentField = JSON.parse(JSON.stringify(state.opponentField || []));
-    isMyTurn = !!state.isMyTurn;
-    isInitialDeploymentPhase = false;
-    document.getElementById('opponent-name').innerText = state.opponentName;
-    document.getElementById('battle-action-info').innerText = isMyTurn ? '내 턴입니다.' : '상대 턴을 기다리는 중입니다.';
-  } else if (state.playerCount === 2) {
-    opponentField = JSON.parse(JSON.stringify(state.opponentField || []));
-    document.getElementById('opponent-name').innerText = state.opponentName;
+  if (!socket) {
+    socket = io();
+    socket.on('battle:state', applyState);
+    socket.on('battle:motion', showRemoteMotion);
   }
-  renderBattleUI();
-  updateTurnIndicator();
-  applyingNetworkState = false;
+  let code = prompt('방을 만들려면 빈칸으로 확인, 참가하려면 방 코드를 입력하세요.');
+  if (code === null) return;
+  if (!code.trim()) socket.emit('room:create', { name: playerNickname }, r => { if (r.ok) alert(`방 코드: ${r.code}`); });
+  else socket.emit('room:join', { code: code.trim(), name: playerNickname }, r => { if (!r.ok) alert(r.message); });
 }
-function sendReadyIfNeeded() {
-  if (gameMode !== 'multiplayer' || applyingNetworkState || readySent || isInitialDeploymentPhase || !playerField.length) return;
-  readySent = true;
-  socket.emit('battle:ready', { field: playerField });
-  document.getElementById('battle-action-info').innerText = '상대의 시작 몬스터 배치를 기다리는 중입니다.';
+function beginMulti() {
+  gameMode = 'multiplayer'; readySent = false; multiplayerStarted = false; isMyTurn = false; initBattle(); opponentField = [];
+  document.getElementById('opponent-name').innerText = '상대 준비 중'; renderBattleUI();
 }
-function commitMultiplayerTurn() {
-  socket.emit('battle:commit', { myField: playerField, opponentField, endTurn: true });
+function applyState(state) {
+  roomCode = state.code;
+  if (state.count === 2 && gameMode !== 'multiplayer') beginMulti();
+  if (gameMode !== 'multiplayer') return;
+  const wasStarted = multiplayerStarted, wasMyTurn = isMyTurn;
+  applyingState = true;
+  if (state.started) {
+    multiplayerStarted = true; playerField = state.myField; opponentField = state.opponentField;
+    isMyTurn = state.myTurn; isInitialDeploymentPhase = false;
+    document.getElementById('opponent-name').innerText = state.opponentName;
+  } else if (state.count === 2) opponentField = state.opponentField;
+  renderBattleUI(); updateTurnIndicator(); applyingState = false;
+  if (state.started && (!wasStarted || wasMyTurn !== isMyTurn)) showTurnSplash(isMyTurn, !wasStarted);
 }
-
-const originalRenderBattleUI = renderBattleUI;
-renderBattleUI = function () {
-  originalRenderBattleUI();
-  setTimeout(sendReadyIfNeeded, 0);
+function emitReady() {
+  if (gameMode === 'multiplayer' && !applyingState && !readySent && !isInitialDeploymentPhase && playerField.length) {
+    readySent = true; socket.emit('battle:ready', { field: playerField });
+  }
+}
+window.emitBattleMotion = data => {
+  if (gameMode === 'multiplayer' && multiplayerStarted && isMyTurn) socket.emit('battle:motion', { kind: 'skill', ...data });
 };
-
-const originalEndMyTurn = endMyTurn;
+window.emitItemMotion = data => {
+  if (gameMode === 'multiplayer' && multiplayerStarted && isMyTurn) socket.emit('battle:motion', { kind: 'item', ...data });
+};
+const baseRender = renderBattleUI;
+renderBattleUI = function () { baseRender(); setTimeout(emitReady, 0); };
+const baseEnd = endMyTurn;
 endMyTurn = function () {
-  if (gameMode !== 'multiplayer') return originalEndMyTurn();
+  if (gameMode !== 'multiplayer') return baseEnd();
   if (!multiplayerStarted || !isMyTurn) return;
-
-  const passiveHealEffects = [];
-  playerField.forEach(p => {
-    if (p.shieldTurns > 0) p.shieldTurns--;
-    if (p.turnHeal && p.currentHp > 0 && !p.isSleep) {
-      const before = p.currentHp;
-      p.currentHp = Math.min(p.hp, p.currentHp + p.turnHeal);
-      if (p.currentHp > before) passiveHealEffects.push({ monster: p, amount: p.currentHp - before });
-    }
-  });
   processEndTurnStatusEffects('player', () => {
-    isMyTurn = false;
-    hasDrawnThisTurn = false;
-    resetActionState();
-    renderBattleUI();
-    updateTurnIndicator();
-    commitMultiplayerTurn();
+    isMyTurn = false; resetActionState(); renderBattleUI(); updateTurnIndicator();
+    socket.emit('battle:commit', { myField: playerField, opponentField });
   });
 };
-
-const originalDummyTurnAction = dummyTurnAction;
-dummyTurnAction = function () {
-  if (gameMode === 'multiplayer') return;
-  return originalDummyTurnAction();
-};
-
+const baseDummy = dummyTurnAction;
+dummyTurnAction = function () { if (gameMode === 'multiplayer') return; return baseDummy(); };
 window.addEventListener('DOMContentLoaded', () => {
-  ensureMultiplayerUI();
-  installModeButtons();
+  const menu = document.querySelector('#main-menu .menu-buttons');
+  const match = [...menu.querySelectorAll('button')].find(b => b.textContent.includes('매치'));
+  if (match) { match.textContent = '봇 대전'; match.onclick = () => { gameMode = 'bot'; startMatchmakingProcess(); }; }
+  const multi = document.createElement('button'); multi.textContent = '온라인 멀티플레이'; multi.onclick = multiplayerLobby; menu.appendChild(multi);
 });
