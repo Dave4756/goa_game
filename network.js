@@ -44,6 +44,7 @@ function connectSocket() {
   if (socket) return socket;
   socket = io();
   socket.on('room:state', applyRoomState);
+  socket.on('battle:fx', receiveMultiplayerEffect);
   socket.on('room:notice', message => setMultiplayerStatus(message));
   socket.on('battle:started', () => { multiplayerStarted = true; });
   socket.on('disconnect', () => setMultiplayerStatus('서버 연결이 끊어졌습니다.'));
@@ -101,6 +102,8 @@ function applyRoomState(state) {
     multiplayerStarted = true;
     playerField = JSON.parse(JSON.stringify(state.myField || []));
     opponentField = JSON.parse(JSON.stringify(state.opponentField || []));
+    playerTrash = JSON.parse(JSON.stringify(state.myTrash || playerTrash || []));
+    opponentTrash = JSON.parse(JSON.stringify(state.opponentTrash || opponentTrash || []));
     isMyTurn = !!state.isMyTurn;
     isInitialDeploymentPhase = false;
     document.getElementById('opponent-name').innerText = state.opponentName;
@@ -119,8 +122,60 @@ function sendReadyIfNeeded() {
   socket.emit('battle:ready', { field: playerField });
   document.getElementById('battle-action-info').innerText = '상대의 시작 몬스터 배치를 기다리는 중입니다.';
 }
+function mapRemoteSide(side) {
+  if (side === 'own') return 'opponent';
+  if (side === 'opponent') return 'own';
+  return side;
+}
+
+window.broadcastMultiplayerEffect = function (effect) {
+  if (gameMode !== 'multiplayer' || applyingNetworkState || !socket || !multiplayerRoom) return;
+  socket.emit('battle:fx', { roomCode: multiplayerRoom, effect });
+};
+
+function receiveMultiplayerEffect(payload) {
+  if (gameMode !== 'multiplayer') return;
+  const effect = payload?.effect || payload;
+  if (!effect?.type) return;
+  if (effect.type === 'item') return playRemoteItemEffect(effect);
+  if (effect.type === 'awakening') {
+    showAwakeningEffect(effect.card || {}, true);
+    return;
+  }
+  if (effect.type === 'damage') {
+    const isPlayerTarget = mapRemoteSide(effect.targetSide) === 'own';
+    const attackerIsPlayer = mapRemoteSide(effect.attackerSide) === 'own';
+    showDamageFloatingEffect(Number(effect.targetIndex), isPlayerTarget,
+      Number(effect.damage) || 0, Number(effect.bonusDamage) || 0,
+      effect.attackerIndex == null ? null : Number(effect.attackerIndex), attackerIsPlayer);
+  }
+}
+
+function playRemoteItemEffect(effect) {
+  const side = mapRemoteSide(effect.targetSide);
+  const target = side === 'own'
+    ? document.getElementById('player-field-slots')?.children[effect.targetIndex]
+    : side === 'opponent'
+      ? document.getElementById('opponent-field-slots')?.children[effect.targetIndex]
+      : document.getElementById('battle-board');
+  if (!target) return;
+  const rect = target.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'item-use-effect';
+  el.innerHTML = `<div class="item-effect-card"><img src="${effect.item?.image || ''}" alt=""><span>${effect.item?.name || '아이템'}</span></div><div class="item-effect-ring"></div>`;
+  el.style.setProperty('--item-start-x', `${window.innerWidth / 2}px`);
+  el.style.setProperty('--item-start-y', `${window.innerHeight * .18}px`);
+  el.style.setProperty('--item-end-x', `${rect.left + rect.width / 2}px`);
+  el.style.setProperty('--item-end-y', `${rect.top + rect.height / 2}px`);
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 950);
+}
+
 function commitMultiplayerTurn() {
-  socket.emit('battle:commit', { myField: playerField, opponentField, endTurn: true });
+  socket.emit('battle:commit', {
+    myField: playerField, opponentField,
+    myTrash: playerTrash, opponentTrash, endTurn: true
+  });
 }
 
 const originalRenderBattleUI = renderBattleUI;
@@ -137,6 +192,14 @@ endMyTurn = function () {
   const passiveHealEffects = [];
   playerField.forEach(p => {
     if (p.shieldTurns > 0) p.shieldTurns--;
+    if (p.redirectAttackTarget && p.redirectAttackDuration > 0) {
+      p.redirectAttackDuration--;
+      if (p.redirectAttackDuration <= 0) p.redirectAttackTarget = false;
+    }
+    if (p.isParalyzed && p.paralyzedTurns > 0) {
+      p.paralyzedTurns--;
+      if (p.paralyzedTurns <= 0) p.isParalyzed = false;
+    }
     if (p.turnHeal && p.currentHp > 0 && !p.isSleep) {
       const before = p.currentHp;
       p.currentHp = Math.min(p.hp, p.currentHp + p.turnHeal);

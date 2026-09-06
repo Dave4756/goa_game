@@ -15,6 +15,8 @@ let selectedAttackerIndex = null;
 let activeSkillIndex = null;
 let isInitialDeploymentPhase = false;
 let pendingItemCardIndex = null;
+let lastTurnBannerKey = null;
+let battleEnded = false;
 
 function changeScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -607,7 +609,7 @@ function startItemUsageFromModal(handIdx) {
 
 function useDrawItemFromHand(handIdx) {
     const itemCard = myHand[handIdx];
-    playItemUseEffect(itemCard);
+    playItemUseEffect(itemCard, null, handIdx);
     const skill = itemCard.skills && itemCard.skills[0] ? itemCard.skills[0] : {};
     const drawnCards = [];
 
@@ -653,7 +655,7 @@ function useDrawItemFromHand(handIdx) {
 
 function useConfuseAllItem(handIdx) {
     const itemCard = myHand[handIdx];
-    playItemUseEffect(itemCard);
+    playItemUseEffect(itemCard, null, handIdx);
     const skill = itemCard.skills && itemCard.skills[0] ? itemCard.skills[0] : {};
 
     opponentField.forEach(opponent => {
@@ -724,8 +726,15 @@ function animateCardDraw(card) {
     };
 }
 
-function playItemUseEffect(itemCard, targetFieldIndex = null) {
-    const source = document.querySelector('#battle-player-hand .card-ui');
+function emitMultiplayerEffect(effect) {
+    if (typeof window.broadcastMultiplayerEffect === 'function') {
+        window.broadcastMultiplayerEffect(effect);
+    }
+}
+
+function playItemUseEffect(itemCard, targetFieldIndex = null, sourceHandIndex = null, suppressNetwork = false) {
+    const handCards = document.querySelectorAll('#battle-player-hand .card-ui');
+    const source = sourceHandIndex !== null ? handCards[sourceHandIndex] : handCards[0];
     const target = targetFieldIndex !== null
         ? document.getElementById('player-field-slots')?.children[targetFieldIndex]
         : document.getElementById('battle-board');
@@ -751,7 +760,48 @@ function playItemUseEffect(itemCard, targetFieldIndex = null) {
     effect.style.setProperty('--item-end-x', `${endX}px`);
     effect.style.setProperty('--item-end-y', `${endY}px`);
     document.body.appendChild(effect);
+    if (!suppressNetwork) {
+        emitMultiplayerEffect({
+            type: 'item',
+            item: { name: itemCard.name || '아이템', image: itemCard.image || '' },
+            targetSide: targetFieldIndex !== null ? 'own' : 'board',
+            targetIndex: targetFieldIndex
+        });
+    }
     setTimeout(() => effect.remove(), 950);
+}
+
+function showAwakeningEffect(card, suppressNetwork = false) {
+    let overlay = document.getElementById('awakening-effect');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'awakening-effect';
+        overlay.innerHTML = `
+            <div class="awakening-flash"></div>
+            <div class="awakening-rays"></div>
+            <div class="awakening-shockwave awakening-shockwave-one"></div>
+            <div class="awakening-shockwave awakening-shockwave-two"></div>
+            <div class="awakening-card-wrap">
+                <div class="awakening-label">ULTIMATE AWAKENING</div>
+                <img class="awakening-card-image" alt="각성 카드">
+                <div class="awakening-card-name"></div>
+                <div class="awakening-subtitle">세 가지 힘이 하나로 결집했다</div>
+            </div>`;
+        document.body.appendChild(overlay);
+    }
+    overlay.querySelector('.awakening-card-image').src = card.image || '';
+    overlay.querySelector('.awakening-card-name').textContent = card.name || '각성';
+    overlay.classList.remove('show');
+    void overlay.offsetWidth;
+    overlay.classList.add('show');
+    clearTimeout(overlay.hideTimer);
+    overlay.hideTimer = setTimeout(() => overlay.classList.remove('show'), 3300);
+    if (!suppressNetwork) {
+        emitMultiplayerEffect({
+            type: 'awakening',
+            card: { id: card.id, name: card.name, image: card.image }
+        });
+    }
 }
 
 function applyTargetItemToMonster(fIdx) {
@@ -760,7 +810,7 @@ function applyTargetItemToMonster(fIdx) {
     const itemCard = myHand[pendingItemCardIndex];
     const targetMonster = playerField[fIdx];
     const skill = itemCard.skills && itemCard.skills[0] ? itemCard.skills[0] : {};
-    playItemUseEffect(itemCard, fIdx);
+    playItemUseEffect(itemCard, fIdx, pendingItemCardIndex);
 
     if (skill.type === 'draw_monster' || skill.type === 'draw_random') {
         useDrawItemFromHand(pendingItemCardIndex);
@@ -789,6 +839,21 @@ function applyTargetItemToMonster(fIdx) {
         return;
     }
 
+    if (skill.type === 'heal' || skill.heal) {
+        const previousHp = targetMonster.currentHp;
+        const healAmount = Number(skill.heal) || 20;
+        targetMonster.currentHp = Math.min(targetMonster.hp, targetMonster.currentHp + healAmount);
+        const actualHeal = targetMonster.currentHp - previousHp;
+        showFloatingEffect(fIdx, true, `+${actualHeal}`, true);
+        document.getElementById('battle-action-info').innerText =
+            `[${itemCard.name}] 사용! [${targetMonster.name}]의 체력을 ${actualHeal} 회복했습니다.`;
+        myHand.splice(pendingItemCardIndex, 1);
+        playerTrash.push(itemCard);
+        pendingItemCardIndex = null;
+        renderBattleUI();
+        return;
+    }
+
     if (!targetMonster.equippedItems) targetMonster.equippedItems = [];
     if (targetMonster.equippedItems.some(i => i.id === itemCard.id)) {
         alert("이미 동일한 아이템이 장착되어 있습니다!");
@@ -799,11 +864,7 @@ function applyTargetItemToMonster(fIdx) {
 
     targetMonster.equippedItems.push(itemCard);
 
-    if (skill.type === 'heal' || skill.heal) {
-        let healAmount = skill.heal || 20;
-        targetMonster.currentHp = Math.min(targetMonster.hp, targetMonster.currentHp + healAmount);
-        showFloatingEffect(fIdx, true, `+${healAmount}`, true);
-    } else if (skill.type === 'buff' || skill.attackBonus) {
+    if (skill.type === 'buff' || skill.attackBonus) {
         let bonus = skill.attackBonus || 10;
         targetMonster.damageBonus = (targetMonster.damageBonus || 0) + bonus;
     } else if (skill.type === 'passive_reduction') {
@@ -835,6 +896,7 @@ function applyTargetItemToMonster(fIdx) {
 
             document.getElementById('battle-action-info').innerText = `✨ 아이템 3종 세트 완성! [${targetMonster.name}]이(가) 각성했습니다!`;
             showFloatingEffect(fIdx, true, "각성 완료!", true);
+            showAwakeningEffect(targetMonster);
         }
     }
 
@@ -1480,28 +1542,45 @@ function applyStatusEffect(target, statusType, duration) {
     }
 }
 
+function moveDefeatedMonsterToTrash(monster, trash) {
+    const items = Array.isArray(monster.equippedItems) ? monster.equippedItems : [];
+    trash.push({ ...monster, equippedItems: [] });
+    items.forEach(item => trash.push(JSON.parse(JSON.stringify(item))));
+}
+
+function checkBattleResult() {
+    if (battleEnded || isInitialDeploymentPhase) return battleEnded;
+    if (opponentField.length === 0 || playerField.length === 0) {
+        battleEnded = true;
+        isMyTurn = false;
+        resetActionState();
+        const won = opponentField.length === 0 && playerField.length > 0;
+        document.getElementById('battle-action-info').innerText = won
+            ? '승리! 상대 몬스터를 모두 쓰러뜨렸습니다.'
+            : '패배! 내 몬스터가 모두 쓰러졌습니다.';
+        showTurnChangeEffect(won ? '승리!' : '패배', won ? 'win' : 'lose', true);
+        updateTurnIndicator(true);
+        return true;
+    }
+    return false;
+}
+
 function checkFieldDeaths() {
     playerField = playerField.filter(monster => {
         if (monster.currentHp <= 0) {
-            playerTrash.push(monster);
-            if (monster.equippedItems && monster.equippedItems.length > 0) {
-                playerTrash.push(...monster.equippedItems);
-            }
+            moveDefeatedMonsterToTrash(monster, playerTrash);
             return false;
         }
         return true;
     });
-
     opponentField = opponentField.filter(monster => {
         if (monster.currentHp <= 0) {
-            opponentTrash.push(monster);
-            if (monster.equippedItems && monster.equippedItems.length > 0) {
-                opponentTrash.push(...monster.equippedItems);
-            }
+            moveDefeatedMonsterToTrash(monster, opponentTrash);
             return false;
         }
         return true;
     });
+    checkBattleResult();
 }
 
 function showDamageFloatingEffect(targetIndex, isPlayerField, totalDmg, bonusDmg, attackerIndex = null, attackerIsPlayer = !isPlayerField) {
@@ -1537,6 +1616,17 @@ function showDamageFloatingEffect(targetIndex, isPlayerField, totalDmg, bonusDmg
     effectEl.innerHTML = htmlText;
 
     document.body.appendChild(effectEl);
+    if (attackerIsPlayer) {
+        emitMultiplayerEffect({
+            type: 'damage',
+            targetSide: isPlayerField ? 'own' : 'opponent',
+            targetIndex,
+            attackerSide: 'own',
+            attackerIndex,
+            damage: totalDmg,
+            bonusDamage: bonusDmg
+        });
+    }
 
     requestAnimationFrame(() => {
         effectEl.style.transform = 'translate(-50%, -80px) scale(1.2)';
@@ -1740,6 +1830,18 @@ function processEndTurnStatusEffects(endingSide, doneCallback) {
 }
 
 function endMyTurn() {
+    if (battleEnded || !isMyTurn) {
+        document.getElementById('battle-action-info').innerText = battleEnded
+            ? '전투가 이미 종료되었습니다.'
+            : '상대 턴에는 턴을 종료할 수 없습니다.';
+        return;
+    }
+    if (isInitialDeploymentPhase) {
+        document.getElementById('battle-action-info').innerText = '먼저 시작 몬스터를 필드에 배치해야 합니다.';
+        return;
+    }
+    isMyTurn = false;
+    updateTurnIndicator();
     const passiveHealEffects = [];
     playerField.forEach(p => {
         if (p.shieldTurns > 0) p.shieldTurns--;
@@ -1886,14 +1988,53 @@ function endBotTurn() {
     });
 }
 
-function updateTurnIndicator() {
+function ensureTurnChangeEffect() {
+    let overlay = document.getElementById('turn-change-effect');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'turn-change-effect';
+        overlay.innerHTML = '<div class="turn-change-panel"><div class="turn-change-title"></div><div class="turn-change-subtitle"></div></div>';
+        document.body.appendChild(overlay);
+    }
+    return overlay;
+}
+
+function showTurnChangeEffect(title, theme = 'mine', force = false) {
+    const battleScreen = document.getElementById('battle-screen');
+    if (!force && (!battleScreen || !battleScreen.classList.contains('active'))) return;
+    const overlay = ensureTurnChangeEffect();
+    overlay.className = theme;
+    overlay.querySelector('.turn-change-title').textContent = title;
+    overlay.querySelector('.turn-change-subtitle').textContent =
+        theme === 'mine' ? '카드를 선택해 행동하세요' :
+        theme === 'opponent' ? '상대의 행동을 기다리세요' : '';
+    overlay.classList.remove('show');
+    void overlay.offsetWidth;
+    overlay.classList.add('show');
+    clearTimeout(overlay.hideTimer);
+    overlay.hideTimer = setTimeout(() => overlay.classList.remove('show'), 1450);
+}
+
+function updateTurnIndicator(suppressBanner = false) {
     const indicator = document.getElementById('turn-indicator');
+    if (battleEnded) {
+        indicator.innerText = '전투 종료';
+        indicator.style.color = '#bdc3c7';
+        return;
+    }
+    const mode = typeof gameMode === 'string' ? gameMode : 'bot';
+    const started = typeof multiplayerStarted === 'boolean' ? multiplayerStarted : false;
+    const turnKey = `${mode}:${isMyTurn ? 'mine' : 'opponent'}:${started}`;
     if (isMyTurn) {
-        indicator.innerText = "내 턴 (행동 가능)";
-        indicator.style.color = "#f1c40f";
+        indicator.innerText = '내 턴 (행동 가능)';
+        indicator.style.color = '#f1c40f';
     } else {
-        indicator.innerText = "상대 턴 대기 중...";
-        indicator.style.color = "#e74c3c";
+        indicator.innerText = '상대 턴 대기 중...';
+        indicator.style.color = '#e74c3c';
+    }
+    if (!suppressBanner && lastTurnBannerKey !== turnKey) {
+        lastTurnBannerKey = turnKey;
+        showTurnChangeEffect(isMyTurn ? '내 턴' : '상대 턴', isMyTurn ? 'mine' : 'opponent');
     }
 }
 

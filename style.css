@@ -815,3 +815,63 @@ button:hover { background: #2980b9; }
     height: 0;
     display: none;
 }
+
+#multiplayer-overlay { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.72); z-index:13000; }
+#multiplayer-overlay.active { display:flex; }
+.multiplayer-panel { width:min(420px,calc(100vw - 32px)); padding:24px; box-sizing:border-box; border-radius:14px; background:#34495e; box-shadow:0 18px 50px rgba(0,0,0,.55); text-align:center; }
+.multiplayer-panel input { width:100%; box-sizing:border-box; margin:12px 0; padding:12px; border:0; border-radius:7px; text-align:center; font-size:18px; letter-spacing:3px; }
+.multiplayer-buttons { display:flex; gap:8px; }
+.multiplayer-buttons button { flex:1; }
+#turn-change-effect { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:14000; pointer-events:none; opacity:0; }
+#turn-change-effect.show { animation:turn-overlay 1.45s ease both; }
+.turn-change-panel { min-width:min(560px,86vw); padding:28px 42px; border:2px solid rgba(255,255,255,.8); border-radius:18px; background:rgba(15,23,42,.92); text-align:center; transform:scale(.75); }
+#turn-change-effect.show .turn-change-panel { animation:turn-panel 1.45s cubic-bezier(.2,.9,.25,1) both; }
+#turn-change-effect.mine .turn-change-panel { box-shadow:0 0 50px rgba(241,196,15,.8); }
+#turn-change-effect.opponent .turn-change-panel { box-shadow:0 0 50px rgba(231,76,60,.8); }
+#turn-change-effect.win .turn-change-panel { box-shadow:0 0 55px rgba(46,204,113,.9); }
+#turn-change-effect.lose .turn-change-panel { box-shadow:0 0 55px rgba(149,165,166,.9); }
+.turn-change-title { font-size:clamp(38px,8vw,72px); font-weight:900; line-height:1; text-shadow:0 4px 12px #000; }
+.mine .turn-change-title { color:#f1c40f; } .opponent .turn-change-title { color:#ff7675; } .win .turn-change-title { color:#2ecc71; } .lose .turn-change-title { color:#bdc3c7; }
+.turn-change-subtitle { margin-top:12px; color:#ecf0f1; font-size:16px; }
+@keyframes turn-overlay { 0%{opacity:0;background:rgba(0,0,0,0)} 18%,70%{opacity:1;background:rgba(0,0,0,.42)} 100%{opacity:0;background:rgba(0,0,0,0)} }
+@keyframes turn-panel { 0%{transform:scale(.68) translateY(18px);filter:blur(5px)} 22%,72%{transform:scale(1);filter:blur(0)} 100%{transform:scale(1.12) translateY(-8px);filter:blur(2px)} }
+
+/* 각성 전장현 첫 등장 전용 이펙트 */
+#awakening-effect {
+    position: fixed;
+    inset: 0;
+    z-index: 16000;
+    display: none;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    background: radial-gradient(circle at center, rgba(255,215,0,.18), rgba(4,5,16,.96) 68%);
+}
+#awakening-effect.show { display: flex; animation: awakening-scene 3.3s ease both; }
+.awakening-flash { position:absolute; inset:0; background:#fff; opacity:0; }
+.show .awakening-flash { animation: awakening-flash 3.3s ease-out both; }
+.awakening-rays {
+    position:absolute; width:150vmax; height:150vmax; border-radius:50%;
+    background: repeating-conic-gradient(from 0deg, rgba(255,224,80,.9) 0deg 2deg, transparent 2deg 9deg);
+    filter: blur(1px); opacity:0;
+}
+.show .awakening-rays { animation: awakening-rays 3.3s linear both; }
+.awakening-shockwave { position:absolute; width:160px; height:160px; border:8px solid #fff2a0; border-radius:50%; opacity:0; box-shadow:0 0 45px #ffd700, inset 0 0 35px #ffef88; }
+.show .awakening-shockwave-one { animation: awakening-wave 1.25s .48s ease-out both; }
+.show .awakening-shockwave-two { animation: awakening-wave 1.35s .82s ease-out both; }
+.awakening-card-wrap { position:relative; display:flex; flex-direction:column; align-items:center; opacity:0; transform:scale(.15) rotate(-18deg); filter:brightness(4) blur(8px); }
+.show .awakening-card-wrap { animation: awakening-card 3.3s cubic-bezier(.16,.88,.2,1) both; }
+.awakening-card-image { width:min(280px,55vw); max-height:52vh; object-fit:contain; border:5px solid #ffe66d; border-radius:18px; background:#111827; box-shadow:0 0 18px #fff,0 0 45px #ffd700,0 0 100px #ff6b00; }
+.awakening-label { margin-bottom:14px; color:#fff3a3; font-size:clamp(18px,4vw,34px); font-weight:1000; letter-spacing:.16em; text-shadow:0 0 8px #fff,0 0 22px #ff9f00; }
+.awakening-card-name { margin-top:18px; color:#fff; font-size:clamp(34px,7vw,74px); font-weight:1000; line-height:1; text-shadow:0 3px 0 #8a4b00,0 0 12px #fff,0 0 32px #ffb300; }
+.awakening-subtitle { margin-top:12px; color:#ffeaa7; font-size:clamp(14px,2.5vw,22px); font-weight:800; letter-spacing:.08em; text-shadow:0 2px 5px #000; }
+@keyframes awakening-scene { 0%{opacity:0} 8%,82%{opacity:1} 100%{opacity:0} }
+@keyframes awakening-flash { 0%,12%{opacity:0} 15%{opacity:1} 21%{opacity:0} 31%{opacity:.75} 36%,100%{opacity:0} }
+@keyframes awakening-rays { 0%,12%{opacity:0;transform:scale(.1) rotate(0)} 22%{opacity:.78;transform:scale(.75) rotate(35deg)} 82%{opacity:.35;transform:scale(1.15) rotate(190deg)} 100%{opacity:0;transform:scale(1.35) rotate(230deg)} }
+@keyframes awakening-wave { 0%{opacity:1;transform:scale(.25)} 100%{opacity:0;transform:scale(9)} }
+@keyframes awakening-card { 0%,12%{opacity:0;transform:scale(.15) rotate(-18deg);filter:brightness(4) blur(8px)} 24%{opacity:1;transform:scale(1.18) rotate(3deg);filter:brightness(2) blur(0)} 35%{transform:scale(.94) rotate(-1deg);filter:brightness(1)} 48%,82%{opacity:1;transform:scale(1) rotate(0);filter:brightness(1)} 100%{opacity:0;transform:scale(1.18);filter:brightness(1.8) blur(3px)} }
+@media (prefers-reduced-motion: reduce) {
+    #awakening-effect.show, .show .awakening-flash, .show .awakening-rays,
+    .show .awakening-shockwave, .show .awakening-card-wrap { animation-duration:.8s; }
+}
