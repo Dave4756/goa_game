@@ -429,6 +429,8 @@ function drawCardFromDeck() {
 
     const drawnCard = battleDeck.shift();
     hasDrawnThisTurn = true;
+    playDrawSequenceEffect({ style: 'normal', count: 1 });
+    broadcastDrawEffect('normal', 1);
 
     animateCardDraw(drawnCard);
 
@@ -471,6 +473,9 @@ function renderBattleUI() {
                     damageReduction: 0,
                     turnHeal: 0
                 });
+                const deployedIndex = playerField.length - 1;
+                requestAnimationFrame(() => animateMonsterDeploy(deployed, deployedIndex));
+                broadcastDeployEffect(deployed, deployedIndex);
                 isInitialDeploymentPhase = false;
                 document.getElementById('battle-action-info').innerText = "필드 카드를 클릭하여 상세정보 및 스킬을 사용하세요.";
                 renderBattleUI();
@@ -609,50 +614,29 @@ function startItemUsageFromModal(handIdx) {
 
 function useDrawItemFromHand(handIdx) {
     const itemCard = myHand[handIdx];
-    playItemUseEffect(itemCard, null, handIdx);
+    if (!itemCard) return;
     const skill = itemCard.skills && itemCard.skills[0] ? itemCard.skills[0] : {};
     const drawnCards = [];
-
     if (skill.type === 'draw_monster') {
-        const monsterIndex = battleDeck.findIndex(card =>
-            card.type !== 'ITEM' && card.type !== 'NORMAL_ITEM' && card.type !== 'EVOLUTION'
-        );
-        if (monsterIndex === -1) {
-            document.getElementById('battle-action-info').innerText = "덱에 뽑을 수 있는 몬스터 카드가 없습니다!";
-            return;
-        }
+        const monsterIndex = battleDeck.findIndex(card => card.type !== 'ITEM' && card.type !== 'NORMAL_ITEM' && card.type !== 'EVOLUTION');
+        if (monsterIndex === -1) { document.getElementById('battle-action-info').innerText = '덱에 뽑을 수 있는 몬스터 카드가 없습니다!'; return; }
         drawnCards.push(battleDeck.splice(monsterIndex, 1)[0]);
     } else if (skill.type === 'draw_random') {
-        const drawCount = Math.min(skill.count || 2, battleDeck.length);
-        for (let i = 0; i < drawCount; i++) {
-            const randomIndex = Math.floor(Math.random() * battleDeck.length);
-            drawnCards.push(battleDeck.splice(randomIndex, 1)[0]);
-        }
-        if (drawnCards.length === 0) {
-            document.getElementById('battle-action-info').innerText = "덱에 남은 카드가 없습니다!";
-            return;
-        }
-    }
-
+        const drawCount = Math.min(Number(skill.count) || 2, battleDeck.length);
+        for (let i = 0; i < drawCount; i++) drawnCards.push(battleDeck.splice(Math.floor(Math.random() * battleDeck.length), 1)[0]);
+        if (!drawnCards.length) { document.getElementById('battle-action-info').innerText = '덱에 남은 카드가 없습니다!'; return; }
+    } else return;
+    const drawStyle = getDrawStyle(itemCard);
+    playDrawSequenceEffect({ style: drawStyle, count: drawnCards.length });
+    broadcastDrawEffect(drawStyle, drawnCards.length, itemCard);
     myHand.splice(handIdx, 1);
     playerTrash.push(itemCard);
-
     consumableItemUsedThisTurn[skill.type] = true;
-
-    drawnCards.forEach((card, idx) => {
-        setTimeout(() => {
-            animateCardDraw(card);
-        }, idx * 200);
-    });
-
     document.getElementById('battle-action-info').innerText = `[${itemCard.name}] 사용! ${drawnCards.length}장을 뽑았습니다.`;
-
-    setTimeout(() => {
-        myHand.push(...drawnCards);
-        renderBattleUI();
-    }, (drawnCards.length - 1) * 200 + 600);
+    const startDelay = drawStyle === 'normal' ? 150 : 650;
+    drawnCards.forEach((card, idx) => setTimeout(() => animateCardDraw(card), startDelay + idx * 220));
+    setTimeout(() => { myHand.push(...drawnCards); renderBattleUI(); }, startDelay + Math.max(0, drawnCards.length - 1) * 220 + 650);
 }
-
 function useConfuseAllItem(handIdx) {
     const itemCard = myHand[handIdx];
     playItemUseEffect(itemCard, null, handIdx);
@@ -731,6 +715,68 @@ function emitMultiplayerEffect(effect) {
         window.broadcastMultiplayerEffect(effect);
     }
 }
+function createEffectId(prefix = 'fx') {
+    if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') return `${prefix}-${globalThis.crypto.randomUUID()}`;
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+function getDrawStyle(itemCard) {
+    if (itemCard?.id === 'item_bookbag') return 'bookbag';
+    if (itemCard?.id === 'item_kim_seonga_lottery') return 'lottery';
+    return 'normal';
+}
+function playDrawSequenceEffect({ style = 'normal', count = 1, remote = false } = {}) {
+    const overlay = document.createElement('div');
+    overlay.className = `draw-sequence-effect ${style} ${remote ? 'remote' : 'local'}`;
+    const backs = Array.from({ length: Math.max(1, Math.min(5, Number(count) || 1)) }, (_, i) => `<div class="draw-fx-card" style="--draw-i:${i}"><span>GOA</span></div>`).join('');
+    const title = style === 'bookbag' ? '책가방 오픈!' : style === 'lottery' ? '운명의 제비뽑기!' : remote ? '상대 드로우' : '카드 드로우';
+    overlay.innerHTML = `<div class="draw-fx-title">${title}</div>${style === 'bookbag' ? '<div class="bookbag-fx"><div class="bookbag-lid"></div><div class="bookbag-body">BAG</div></div>' : ''}${style === 'lottery' ? '<div class="lottery-fx"><div class="lottery-cup">LOT</div><div class="lottery-stick">★</div></div>' : ''}<div class="draw-fx-cards">${backs}</div>`;
+    document.body.appendChild(overlay);
+    setTimeout(() => overlay.remove(), style === 'normal' ? 1250 : 2050);
+}
+function broadcastDrawEffect(style, count, itemCard = null) {
+    emitMultiplayerEffect({ type: 'draw', effectId: createEffectId('draw'), drawStyle: style, count: Number(count) || 1, item: itemCard ? { id: itemCard.id, name: itemCard.name, image: itemCard.image } : null });
+}
+function animateMonsterDeploy(card, fieldIndex, remote = false) {
+    const slots = document.getElementById(remote ? 'opponent-field-slots' : 'player-field-slots');
+    const target = slots?.children[fieldIndex] || slots;
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    const effect = document.createElement('div');
+    effect.className = `deploy-card-effect ${remote ? 'remote' : 'local'}`;
+    effect.innerHTML = `<div class="deploy-card-back">GOA</div><div class="deploy-card-front"><img src="${card.image || ''}" alt=""><strong>${card.name || '몬스터'}</strong></div><div class="deploy-impact"></div>`;
+    effect.style.setProperty('--deploy-start-x', `${window.innerWidth / 2}px`);
+    effect.style.setProperty('--deploy-start-y', `${remote ? window.innerHeight * .12 : window.innerHeight * .88}px`);
+    effect.style.setProperty('--deploy-end-x', `${rect.left + rect.width / 2}px`);
+    effect.style.setProperty('--deploy-end-y', `${rect.top + rect.height / 2}px`);
+    document.body.appendChild(effect);
+    setTimeout(() => effect.remove(), 1500);
+}
+function broadcastDeployEffect(card, fieldIndex) {
+    emitMultiplayerEffect({ type: 'deploy', effectId: createEffectId('deploy'), fieldIndex, card: { id: card.id, name: card.name, image: card.image } });
+}
+function showStatusSkillEffect(statusType, attackerIndex, targetIndex, remote = false) {
+    const attackerSlots = document.getElementById(remote ? 'opponent-field-slots' : 'player-field-slots');
+    const targetSlots = document.getElementById(remote ? 'player-field-slots' : 'opponent-field-slots');
+    const attacker = attackerSlots?.children[attackerIndex];
+    const target = targetSlots?.children[targetIndex];
+    if (!target) return;
+    const a = (attacker || target).getBoundingClientRect();
+    const t = target.getBoundingClientRect();
+    const effect = document.createElement('div');
+    effect.className = `status-skill-effect status-${statusType || 'generic'}`;
+    effect.style.setProperty('--skill-start-x', `${a.left + a.width / 2}px`);
+    effect.style.setProperty('--skill-start-y', `${a.top + a.height / 2}px`);
+    effect.style.setProperty('--skill-end-x', `${t.left + t.width / 2}px`);
+    effect.style.setProperty('--skill-end-y', `${t.top + t.height / 2}px`);
+    effect.innerHTML = statusType === 'sleep' ? '<div class="yawn-cloud">후아암...</div><div class="sleep-z z1">Z</div><div class="sleep-z z2">Z</div><div class="sleep-z z3">Z</div>' : `<div class="status-orb">${statusType || 'STATUS'}</div>`;
+    document.body.appendChild(effect);
+    target.classList.add('status-skill-hit');
+    setTimeout(() => target.classList.remove('status-skill-hit'), 1500);
+    setTimeout(() => effect.remove(), 2200);
+}
+function broadcastStatusSkillEffect(statusType, attackerIndex, targetIndex) {
+    emitMultiplayerEffect({ type: 'skill', effectId: createEffectId('skill'), skillEffect: statusType || 'generic', attackerIndex, targetIndex });
+}
 
 function playItemUseEffect(itemCard, targetFieldIndex = null, sourceHandIndex = null, suppressNetwork = false) {
     const handCards = document.querySelectorAll('#battle-player-hand .card-ui');
@@ -795,7 +841,7 @@ function showAwakeningEffect(card, suppressNetwork = false) {
     void overlay.offsetWidth;
     overlay.classList.add('show');
     clearTimeout(overlay.hideTimer);
-    overlay.hideTimer = setTimeout(() => overlay.classList.remove('show'), 3300);
+    overlay.hideTimer = setTimeout(() => overlay.classList.remove('show'), 6500);
     if (!suppressNetwork) {
         emitMultiplayerEffect({
             type: 'awakening',
@@ -810,7 +856,6 @@ function applyTargetItemToMonster(fIdx) {
     const itemCard = myHand[pendingItemCardIndex];
     const targetMonster = playerField[fIdx];
     const skill = itemCard.skills && itemCard.skills[0] ? itemCard.skills[0] : {};
-    playItemUseEffect(itemCard, fIdx, pendingItemCardIndex);
 
     if (skill.type === 'draw_monster' || skill.type === 'draw_random') {
         useDrawItemFromHand(pendingItemCardIndex);
@@ -839,6 +884,7 @@ function applyTargetItemToMonster(fIdx) {
         return;
     }
 
+    playItemUseEffect(itemCard, fIdx, pendingItemCardIndex);
     if (skill.type === 'heal' || skill.heal) {
         const previousHp = targetMonster.currentHp;
         const healAmount = Number(skill.heal) || 20;
@@ -1120,6 +1166,9 @@ function dropToField(e) {
                 damageReduction: 0,
                 turnHeal: 0
             });
+            const deployedIndex = playerField.length - 1;
+            requestAnimationFrame(() => animateMonsterDeploy(card, deployedIndex));
+            broadcastDeployEffect(card, deployedIndex);
             if (isInitialDeploymentPhase) {
                 isInitialDeploymentPhase = false;
                 document.getElementById('battle-action-info').innerText = "필드 카드를 클릭하여 상세정보 및 스킬을 사용하세요.";
@@ -1140,6 +1189,9 @@ function dropToField(e) {
                 damageReduction: 0,
                 turnHeal: 0
             });
+            const deployedIndex = playerField.length - 1;
+            requestAnimationFrame(() => animateMonsterDeploy(card, deployedIndex));
+            broadcastDeployEffect(card, deployedIndex);
             if (isInitialDeploymentPhase) {
                 isInitialDeploymentPhase = false;
                 document.getElementById('battle-action-info').innerText = "필드 카드를 클릭하여 상세정보 및 스킬을 사용하세요.";
@@ -1417,6 +1469,8 @@ function executeTargetSkillLogic(pIdx, sIdx, targetOIdx) {
         // 즉시 피해로 쓰러지지 않은 대상에게 상태이상을 부여합니다.
         if (target.currentHp > 0 && skill.statusType) {
             applyStatusEffect(target, skill.statusType, skill.duration);
+            showStatusSkillEffect(skill.statusType, pIdx, targetOIdx, false);
+            broadcastStatusSkillEffect(skill.statusType, pIdx, targetOIdx);
         }
 
         const statusNames = {

@@ -4,6 +4,7 @@ let multiplayerRoom = null;
 let multiplayerStarted = false;
 let applyingNetworkState = false;
 let readySent = false;
+const processedEffectIds = new Set();
 
 function ensureMultiplayerUI() {
   if (document.getElementById('multiplayer-overlay')) return;
@@ -133,11 +134,30 @@ window.broadcastMultiplayerEffect = function (effect) {
   socket.emit('battle:fx', { roomCode: multiplayerRoom, effect });
 };
 
+function acceptMultiplayerEffect(effect) {
+  if (!effect?.effectId) return true;
+  if (processedEffectIds.has(effect.effectId)) return false;
+  processedEffectIds.add(effect.effectId);
+  setTimeout(() => processedEffectIds.delete(effect.effectId), 12000);
+  return true;
+}
 function receiveMultiplayerEffect(payload) {
   if (gameMode !== 'multiplayer') return;
   const effect = payload?.effect || payload;
-  if (!effect?.type) return;
+  if (!effect?.type || !acceptMultiplayerEffect(effect)) return;
   if (effect.type === 'item') return playRemoteItemEffect(effect);
+  if (effect.type === 'draw') {
+    playDrawSequenceEffect({ style: effect.drawStyle || 'normal', count: effect.count || 1, remote: true });
+    return;
+  }
+  if (effect.type === 'deploy') {
+    requestAnimationFrame(() => animateMonsterDeploy(effect.card || {}, Number(effect.fieldIndex) || 0, true));
+    return;
+  }
+  if (effect.type === 'skill') {
+    showStatusSkillEffect(effect.skillEffect || 'generic', Number(effect.attackerIndex) || 0, Number(effect.targetIndex) || 0, true);
+    return;
+  }
   if (effect.type === 'awakening') {
     showAwakeningEffect(effect.card || {}, true);
     return;
