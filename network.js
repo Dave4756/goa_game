@@ -4,6 +4,7 @@ let multiplayerRoom = null;
 let multiplayerStarted = false;
 let applyingNetworkState = false;
 let readySent = false;
+let matchmakingWaiting = false;
 const processedEffectIds = new Set();
 
 function ensureMultiplayerUI() {
@@ -12,18 +13,48 @@ function ensureMultiplayerUI() {
     <div id="multiplayer-overlay">
       <div class="multiplayer-panel">
         <h2>온라인 멀티플레이</h2>
-        <p id="multiplayer-status">방을 만들거나 참가하세요.</p>
-        <input id="multiplayer-room-code" maxlength="6" placeholder="방 코드 6자리">
-        <div class="multiplayer-buttons">
-          <button id="create-room-btn">방 만들기</button>
-          <button id="join-room-btn">방 참가</button>
-          <button id="close-multiplayer-btn" class="back-btn">닫기</button>
+        <p id="multiplayer-status">플레이 방식을 선택하세요.</p>
+        <div class="multiplayer-mode-buttons">
+          <button id="quick-match-btn" type="button">빠른 매치메이킹</button>
+          <button id="code-match-btn" type="button">방 코드로 참여</button>
         </div>
+        <div id="code-match-panel" hidden>
+          <input id="multiplayer-room-code" maxlength="6" autocomplete="off" placeholder="방 코드 6자리">
+          <div class="multiplayer-buttons">
+            <button id="create-room-btn" type="button">방 만들기</button>
+            <button id="join-room-btn" type="button">방 참가</button>
+          </div>
+        </div>
+        <button id="close-multiplayer-btn" type="button" class="back-btn">닫기</button>
       </div>
     </div>`);
+  document.getElementById('quick-match-btn').onclick = toggleQuickMatchmaking;
+  document.getElementById('code-match-btn').onclick = () => {
+    const panel = document.getElementById('code-match-panel');
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) document.getElementById('multiplayer-room-code').focus();
+  };
   document.getElementById('create-room-btn').onclick = createMultiplayerRoom;
   document.getElementById('join-room-btn').onclick = joinMultiplayerRoom;
   document.getElementById('close-multiplayer-btn').onclick = closeMultiplayerUI;
+}
+function setQuickMatchButton(waiting) {
+  const button = document.getElementById('quick-match-btn');
+  if (button) button.textContent = waiting ? '매치메이킹 취소' : '빠른 매치메이킹';
+}
+function toggleQuickMatchmaking() {
+  const client = connectSocket();
+  if (matchmakingWaiting) {
+    client.emit('matchmaking:cancel');
+    matchmakingWaiting = false;
+    setQuickMatchButton(false);
+    setMultiplayerStatus('매치메이킹을 취소했습니다.');
+  } else {
+    matchmakingWaiting = true;
+    setQuickMatchButton(true);
+    setMultiplayerStatus('상대를 찾는 중입니다...');
+    client.emit('matchmaking:join', { name: playerNickname });
+  }
 }
 
 function installModeButtons() {
@@ -48,6 +79,17 @@ function connectSocket() {
   socket.on('battle:fx', receiveMultiplayerEffect);
   socket.on('room:notice', message => setMultiplayerStatus(message));
   socket.on('battle:started', () => { multiplayerStarted = true; });
+  socket.on('matchmaking:waiting', () => {
+    matchmakingWaiting = true;
+    setQuickMatchButton(true);
+    setMultiplayerStatus('상대를 찾는 중입니다...');
+  });
+  socket.on('matchmaking:matched', ({ roomCode } = {}) => {
+    matchmakingWaiting = false;
+    setQuickMatchButton(false);
+    multiplayerRoom = roomCode || multiplayerRoom;
+    setMultiplayerStatus(`매칭 성공! 방 코드 ${multiplayerRoom}`);
+  });
   socket.on('disconnect', () => setMultiplayerStatus('서버 연결이 끊어졌습니다.'));
   return socket;
 }
@@ -58,6 +100,9 @@ function openMultiplayerUI() {
   document.getElementById('multiplayer-overlay').classList.add('active');
 }
 function closeMultiplayerUI() {
+  if (matchmakingWaiting && socket) socket.emit('matchmaking:cancel');
+  matchmakingWaiting = false;
+  setQuickMatchButton(false);
   document.getElementById('multiplayer-overlay')?.classList.remove('active');
 }
 function setMultiplayerStatus(message) {
@@ -65,6 +110,7 @@ function setMultiplayerStatus(message) {
   if (el) el.textContent = message;
 }
 function createMultiplayerRoom() {
+  if (matchmakingWaiting) toggleQuickMatchmaking();
   connectSocket().emit('room:create', { name: playerNickname }, result => {
     if (!result.ok) return setMultiplayerStatus(result.message);
     multiplayerRoom = result.roomCode;
@@ -73,6 +119,7 @@ function createMultiplayerRoom() {
   });
 }
 function joinMultiplayerRoom() {
+  if (matchmakingWaiting) toggleQuickMatchmaking();
   const roomCode = document.getElementById('multiplayer-room-code').value.trim().toUpperCase();
   connectSocket().emit('room:join', { roomCode, name: playerNickname }, result => {
     if (!result.ok) return setMultiplayerStatus(result.message);

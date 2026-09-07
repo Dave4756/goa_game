@@ -917,13 +917,9 @@ button:hover { background: #2980b9; }
 @keyframes evo-card { 0%,20%{opacity:0;transform:translate(-50%,-50%) scale(.15) rotateY(180deg)} 48%,82%{opacity:1;transform:translate(-50%,-50%) scale(1.12) rotateY(0)} 100%{opacity:0;transform:translate(-50%,-50%) scale(.92) rotateY(0)} }
 @keyframes evo-title { 0%,20%,100%{opacity:0} 42%,80%{opacity:1} }
 #quick-match-btn { width:100%; margin:12px 0; background:linear-gradient(135deg,#8e44ad,#3498db); box-shadow:0 0 16px rgba(52,152,219,.55); }
-
-/* v12 상대 손패 표시 및 아이템 연출 크기 안전장치 */
-#opponent-hand-backs { position:absolute; left:12px; top:8px; z-index:4; display:flex; align-items:center; gap:8px; pointer-events:none; }
-.opponent-hand-label { color:#dfe6e9; font-size:11px; font-weight:800; text-shadow:0 2px 3px #000; white-space:nowrap; }
-.opponent-card-backs { display:flex; align-items:center; min-width:46px; }
-.opponent-card-back { width:30px; height:42px; margin-left:-18px; border:2px solid #ecf0f1; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:6px; font-weight:900; background:repeating-linear-gradient(45deg,#173b66 0 5px,#246cb0 5px 10px); box-shadow:0 2px 4px rgba(0,0,0,.45); transform:rotate(calc((var(--i) - 3) * 2deg)); }
-.opponent-card-back:first-child { margin-left:0; }
-.draw-sequence-effect .draw-fx-card { width:78px!important; height:112px!important; max-width:78px!important; max-height:112px!important; overflow:hidden!important; }
-.bookbag-fx,.lottery-fx { width:180px!important; height:210px!important; max-width:180px!important; max-height:210px!important; }
-.bookbag-body,.lottery-cup { max-width:150px!important; max-height:150px!important; overflow:hidden!important; }
+.multiplayer-mode-buttons { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
+#quick-match-btn { background:linear-gradient(135deg,#8e44ad,#3498db); }
+#code-match-btn { background:linear-gradient(135deg,#16a085,#2980b9); }
+#code-match-panel[hidden] { display:none; }
+#code-match-panel { margin-top:8px; }
+#close-multiplayer-btn { width:100%; margin-top:10px; }
