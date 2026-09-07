@@ -841,7 +841,7 @@ function showAwakeningEffect(card, suppressNetwork = false) {
     void overlay.offsetWidth;
     overlay.classList.add('show');
     clearTimeout(overlay.hideTimer);
-    overlay.hideTimer = setTimeout(() => overlay.classList.remove('show'), 7000);
+    overlay.hideTimer = setTimeout(() => overlay.classList.remove('show'), 6500);
     if (!suppressNetwork) {
         emitMultiplayerEffect({
             type: 'awakening',
@@ -1010,7 +1010,6 @@ function dropItemToSpecificMonster(targetFIdx, e) {
                     document.getElementById('battle-action-info').innerText = `✨ [${targetMonster.name}]이(가) [${card.name}](으)로 진화했습니다!`;
                     showFloatingEffect(targetFIdx, true, "진화 완료!", true);
                     renderBattleUI();
-                    if (typeof window.syncEvolutionNow === 'function') window.syncEvolutionNow(targetFIdx);
                 } else {
                     document.getElementById('battle-action-info').innerText = "이 카드는 지정된 대상 몬스터 위에만 진화시킬 수 있습니다!";
                 }

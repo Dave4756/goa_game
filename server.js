@@ -43,6 +43,8 @@ function view(room, socketId) {
     opponentField: other?.field || [],
     myTrash: me?.trash || [],
     opponentTrash: other?.trash || [],
+    myHandCount: Number(me?.handCount) || 0,
+    opponentHandCount: Number(other?.handCount) || 0,
     isMyTurn: room.started && room.turn === socketId,
     playerCount: room.players.length
   };
@@ -78,6 +80,7 @@ function addMatchedPlayer(room, socket, name) {
     name: String(name || '플레이어').slice(0, 20),
     field: [],
     trash: [],
+    handCount: 0,
     ready: false
   });
   socket.join(room.code);
@@ -126,6 +129,7 @@ io.on('connection', socket => {
       name: String(name || '플레이어').slice(0, 20),
       field: [],
       trash: [],
+      handCount: 0,
       ready: false
     });
     socket.join(roomCode);
@@ -145,6 +149,7 @@ io.on('connection', socket => {
       name: String(name || '플레이어').slice(0, 20),
       field: [],
       trash: [],
+      handCount: 0,
       ready: false
     });
     socket.join(key);
@@ -163,26 +168,34 @@ io.on('connection', socket => {
     if (room.players.length === 2 && room.players.every(item => item.ready)) {
       room.started = true;
       room.turn = room.players[Math.floor(Math.random() * 2)].id;
-      const first = room.players.find(item => item.id === room.turn);
-      room.players.forEach(item => io.to(item.id).emit('battle:coin', { isFirst: item.id === room.turn, firstName: first?.name || '선공 플레이어' }));
       io.to(room.code).emit('battle:started');
     }
     broadcast(room);
   });
 
-  socket.on('battle:deploy', ({ fieldIndex, card } = {}) => {
+  socket.on('battle:hand-count', ({ count } = {}) => {
     const room = rooms.get(socket.data.roomCode);
     const me = room?.players.find(item => item.id === socket.id);
-    if (!room || !me || !card?.id) return;
-    const index = Math.max(0, Math.min(2, Number(fieldIndex) || 0));
-    me.field[index] = JSON.parse(JSON.stringify(card));
-    me.field = me.field.filter(Boolean).slice(0, 3);
+    if (!room || !me) return;
+    me.handCount = Math.max(0, Math.min(20, Number(count) || 0));
+    broadcast(room);
+  });
+  socket.on('battle:sync', ({ myField, opponentField, myTrash, opponentTrash, handCount } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    const me = room?.players.find(item => item.id === socket.id);
+    const other = room?.players.find(item => item.id !== socket.id);
+    if (!room || !me || !other) return;
+    me.field = cloneCards(myField, 3);
+    other.field = cloneCards(opponentField, 3);
+    me.trash = cloneCards(myTrash, 100);
+    other.trash = cloneCards(opponentTrash, 100);
+    me.handCount = Math.max(0, Math.min(20, Number(handCount) || 0));
     broadcast(room);
   });
   socket.on('battle:evolve', ({ fieldIndex, card } = {}) => {
     const room = rooms.get(socket.data.roomCode);
     const me = room?.players.find(item => item.id === socket.id);
-    if (!room || !me || room.turn !== socket.id || !card?.id) return;
+    if (!room || !me || !card?.id) return;
     const index = Math.max(0, Math.min(2, Number(fieldIndex) || 0));
     me.field[index] = JSON.parse(JSON.stringify(card));
     broadcast(room);
@@ -204,7 +217,7 @@ io.on('connection', socket => {
   socket.on('battle:fx', payload => {
     const roomCode = String(payload?.roomCode || socket.data.roomCode || '').trim().toUpperCase();
     const effect = payload?.effect;
-    const allowed = new Set(['item', 'damage', 'awakening', 'draw', 'deploy', 'skill', 'skill-cast', 'evolution']);
+    const allowed = new Set(['item', 'item-status', 'damage', 'awakening', 'draw', 'deploy', 'skill', 'skill-cast', 'evolution']);
     if (!roomCode || !effect || !allowed.has(effect.type)) return;
     if (socket.data.roomCode !== roomCode || !socket.rooms.has(roomCode)) return;
     socket.to(roomCode).emit('battle:fx', { effect });
