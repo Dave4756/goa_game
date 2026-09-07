@@ -917,9 +917,3 @@ button:hover { background: #2980b9; }
 @keyframes evo-card { 0%,20%{opacity:0;transform:translate(-50%,-50%) scale(.15) rotateY(180deg)} 48%,82%{opacity:1;transform:translate(-50%,-50%) scale(1.12) rotateY(0)} 100%{opacity:0;transform:translate(-50%,-50%) scale(.92) rotateY(0)} }
 @keyframes evo-title { 0%,20%,100%{opacity:0} 42%,80%{opacity:1} }
 #quick-match-btn { width:100%; margin:12px 0; background:linear-gradient(135deg,#8e44ad,#3498db); box-shadow:0 0 16px rgba(52,152,219,.55); }
-.multiplayer-mode-buttons { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
-#quick-match-btn { background:linear-gradient(135deg,#8e44ad,#3498db); }
-#code-match-btn { background:linear-gradient(135deg,#16a085,#2980b9); }
-#code-match-panel[hidden] { display:none; }
-#code-match-panel { margin-top:8px; }
-#close-multiplayer-btn { width:100%; margin-top:10px; }
