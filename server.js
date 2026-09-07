@@ -163,11 +163,30 @@ io.on('connection', socket => {
     if (room.players.length === 2 && room.players.every(item => item.ready)) {
       room.started = true;
       room.turn = room.players[Math.floor(Math.random() * 2)].id;
+      const first = room.players.find(item => item.id === room.turn);
+      room.players.forEach(item => io.to(item.id).emit('battle:coin', { isFirst: item.id === room.turn, firstName: first?.name || '선공 플레이어' }));
       io.to(room.code).emit('battle:started');
     }
     broadcast(room);
   });
 
+  socket.on('battle:deploy', ({ fieldIndex, card } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    const me = room?.players.find(item => item.id === socket.id);
+    if (!room || !me || !card?.id) return;
+    const index = Math.max(0, Math.min(2, Number(fieldIndex) || 0));
+    me.field[index] = JSON.parse(JSON.stringify(card));
+    me.field = me.field.filter(Boolean).slice(0, 3);
+    broadcast(room);
+  });
+  socket.on('battle:evolve', ({ fieldIndex, card } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    const me = room?.players.find(item => item.id === socket.id);
+    if (!room || !me || room.turn !== socket.id || !card?.id) return;
+    const index = Math.max(0, Math.min(2, Number(fieldIndex) || 0));
+    me.field[index] = JSON.parse(JSON.stringify(card));
+    broadcast(room);
+  });
   socket.on('battle:commit', ({ myField, opponentField, myTrash, opponentTrash, endTurn } = {}) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || !room.started || room.turn !== socket.id) return;
@@ -185,7 +204,7 @@ io.on('connection', socket => {
   socket.on('battle:fx', payload => {
     const roomCode = String(payload?.roomCode || socket.data.roomCode || '').trim().toUpperCase();
     const effect = payload?.effect;
-    const allowed = new Set(['item', 'damage', 'awakening', 'skill-cast', 'evolution']);
+    const allowed = new Set(['item', 'damage', 'awakening', 'draw', 'deploy', 'skill', 'skill-cast', 'evolution']);
     if (!roomCode || !effect || !allowed.has(effect.type)) return;
     if (socket.data.roomCode !== roomCode || !socket.rooms.has(roomCode)) return;
     socket.to(roomCode).emit('battle:fx', { effect });
