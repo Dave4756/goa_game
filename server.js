@@ -43,6 +43,7 @@ function view(room, socketId) {
     opponentField: other?.field || [],
     myTrash: me?.trash || [],
     opponentTrash: other?.trash || [],
+    opponentHandCount: Number(other?.handCount) || 0,
     isMyTurn: room.started && room.turn === socketId,
     playerCount: room.players.length
   };
@@ -78,6 +79,7 @@ function addMatchedPlayer(room, socket, name) {
     name: String(name || '플레이어').slice(0, 20),
     field: [],
     trash: [],
+    handCount: 0,
     ready: false
   });
   socket.join(room.code);
@@ -126,6 +128,7 @@ io.on('connection', socket => {
       name: String(name || '플레이어').slice(0, 20),
       field: [],
       trash: [],
+      handCount: 0,
       ready: false
     });
     socket.join(roomCode);
@@ -145,6 +148,7 @@ io.on('connection', socket => {
       name: String(name || '플레이어').slice(0, 20),
       field: [],
       trash: [],
+      handCount: 0,
       ready: false
     });
     socket.join(key);
@@ -182,6 +186,31 @@ io.on('connection', socket => {
     broadcast(room);
   });
 
+  socket.on('game:hand', ({ count } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    const me = room?.players.find(player => player.id === socket.id);
+    if (!room || !me) return;
+    me.handCount = Math.max(0, Math.min(20, Number(count) || 0));
+    broadcast(room);
+  });
+  socket.on('game:state', ({ myField, opponentField, myTrash, opponentTrash, handCount } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    const me = room?.players.find(player => player.id === socket.id);
+    const other = room?.players.find(player => player.id !== socket.id);
+    if (!room || !me || !other) return;
+    me.field = cloneCards(myField, 3);
+    other.field = cloneCards(opponentField, 3);
+    me.trash = cloneCards(myTrash, 100);
+    other.trash = cloneCards(opponentTrash, 100);
+    me.handCount = Math.max(0, Math.min(20, Number(handCount) || 0));
+    broadcast(room);
+  });
+  socket.on('game:event', payload => {
+    const roomCode = String(payload?.roomCode || socket.data.roomCode || '').trim().toUpperCase();
+    const event = payload?.event;
+    if (!roomCode || !event?.type || socket.data.roomCode !== roomCode || !socket.rooms.has(roomCode)) return;
+    socket.to(roomCode).emit('game:event', { event });
+  });
   socket.on('battle:fx', payload => {
     const roomCode = String(payload?.roomCode || socket.data.roomCode || '').trim().toUpperCase();
     const effect = payload?.effect;

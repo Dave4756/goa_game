@@ -11,14 +11,16 @@
         "damage": 20,
         "type": "single",
         "element": "normal",
-        "description": "대상에게 20의 기본 피해를 줍니다."
+        "description": "대상에게 20의 기본 피해를 줍니다.",
+        "effect": "royal-slash"
       },
       {
         "name": "체력 회복",
         "heal": 40,
         "type": "heal",
         "element": "normal",
-        "description": "대상의 체력을 40 회복합니다."
+        "description": "대상의 체력을 40 회복합니다.",
+        "effect": "heal-pulse"
       }
     ]
   },
@@ -35,14 +37,16 @@
         "duration": 2,
         "type": "shield",
         "element": "normal",
-        "description": "받는 피해를 50% 감소시킵니다."
+        "description": "받는 피해를 50% 감소시킵니다.",
+        "effect": "iron-wall"
       },
       {
         "name": "광역 물총",
         "damage": 25,
         "type": "multi",
         "element": "water",
-        "description": "대상에게 25의 기본 피해를 줍니다."
+        "description": "대상에게 25의 기본 피해를 줍니다.",
+        "effect": "water-barrage"
       }
     ]
   },
@@ -59,14 +63,16 @@
         "damage": 120,
         "type": "single",
         "element": "normal",
-        "description": "대상에게 120의 기본 피해를 줍니다."
+        "description": "대상에게 120의 기본 피해를 줍니다.",
+        "effect": "ultimate-impact"
       },
       {
         "name": "전체 광역기",
         "damage": 50,
         "type": "multi",
         "element": "normal",
-        "description": "대상에게 50의 기본 피해를 줍니다."
+        "description": "대상에게 50의 기본 피해를 줍니다.",
+        "effect": "ultimate-nova"
       }
     ]
   },
@@ -83,14 +89,16 @@
         "damage": 120,
         "type": "single",
         "element": "normal",
-        "description": "대상에게 120의 기본 피해를 줍니다."
+        "description": "대상에게 120의 기본 피해를 줍니다.",
+        "effect": "dragon-beam"
       },
       {
         "name": "파도",
         "damage": 50,
         "type": "multi",
         "element": "water",
-        "description": "대상에게 50의 기본 피해를 줍니다."
+        "description": "대상에게 50의 기본 피해를 줍니다.",
+        "effect": "tidal-wave"
       }
     ]
   },
@@ -106,7 +114,8 @@
         "damage": 10,
         "type": "single",
         "element": "normal",
-        "description": "대상에게 10의 기본 피해를 줍니다."
+        "description": "대상에게 10의 기본 피해를 줍니다.",
+        "effect": "body-slam"
       }
     ]
   },
@@ -122,7 +131,8 @@
         "damage": 80,
         "type": "single",
         "element": "normal",
-        "description": "대상에게 80의 기본 피해를 줍니다."
+        "description": "대상에게 80의 기본 피해를 줍니다.",
+        "effect": "heavy-press"
       },
       {
         "name": "하품",
@@ -130,7 +140,8 @@
         "type": "status",
         "duration": 1,
         "element": "normal",
-        "description": "대상에게 잠듦 상태를 부여합니다."
+        "description": "대상에게 잠듦 상태를 부여합니다.",
+        "effect": "sleep-cloud"
       }
     ]
   },
@@ -146,7 +157,8 @@
         "damage": 80,
         "type": "single",
         "element": "electric",
-        "description": "대상에게 80의 기본 피해를 줍니다."
+        "description": "대상에게 80의 기본 피해를 줍니다.",
+        "effect": "million-volt"
       },
       {
         "name": "쇼크",
@@ -155,7 +167,8 @@
         "type": "status",
         "duration": 1,
         "element": "electric",
-        "description": "대상에게 30의 피해를 주고 감전 상태를 부여합니다."
+        "description": "대상에게 30의 피해를 주고 감전 상태를 부여합니다.",
+        "effect": "electric-shock"
       }
     ]
   },
@@ -169,7 +182,8 @@
         "name": "즉시 회복",
         "type": "heal",
         "heal": 20,
-        "description": "대상의 체력을 20 회복합니다."
+        "description": "대상의 체력을 20 회복합니다.",
+        "effect": "impact"
       }
     ]
   },
@@ -183,7 +197,8 @@
         "name": "피해 감소",
         "type": "passive_reduction",
         "damageReduction": 15,
-        "description": "받는 피해를 15 감소시킵니다."
+        "description": "받는 피해를 15 감소시킵니다.",
+        "effect": "impact"
       }
     ]
   },
@@ -197,7 +212,8 @@
         "name": "공격력 증가",
         "type": "buff",
         "attackBonus": 15,
-        "description": "공격 피해를 15 증가시킵니다."
+        "description": "공격 피해를 15 증가시킵니다.",
+        "effect": "impact"
       }
     ]
   },
@@ -211,7 +227,8 @@
         "name": "턴당 체력 회복",
         "type": "passive_heal",
         "turnHeal": 10,
-        "description": "턴마다 체력을 10 회복합니다."
+        "description": "턴마다 체력을 10 회복합니다.",
+        "effect": "impact"
       }
     ]
   },
@@ -225,7 +242,8 @@
         "name": "덱에서 몬스터 1장 확정 드로우",
         "type": "draw_monster",
         "count": 1,
-        "description": "카드에 설정된 특수 효과를 발동합니다."
+        "description": "카드에 설정된 특수 효과를 발동합니다.",
+        "effect": "impact"
       }
     ]
   },
@@ -239,7 +257,8 @@
         "name": "덱에서 랜덤 2장 드로우",
         "type": "draw_random",
         "count": 2,
-        "description": "카드에 설정된 특수 효과를 발동합니다."
+        "description": "카드에 설정된 특수 효과를 발동합니다.",
+        "effect": "impact"
       }
     ]
   },
@@ -254,7 +273,8 @@
         "name": "다음 턴 상대 공격 대상 고정",
         "type": "redirect_attack",
         "duration": 1,
-        "description": "카드에 설정된 특수 효과를 발동합니다."
+        "description": "카드에 설정된 특수 효과를 발동합니다.",
+        "effect": "impact"
       }
     ]
   },
@@ -269,7 +289,8 @@
         "name": "상대 모든 몹에게 혼란 부여",
         "type": "confuse_all",
         "duration": 1,
-        "description": "카드에 설정된 특수 효과를 발동합니다."
+        "description": "카드에 설정된 특수 효과를 발동합니다.",
+        "effect": "impact"
       }
     ]
   }
