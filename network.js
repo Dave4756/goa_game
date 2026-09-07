@@ -89,6 +89,8 @@ function beginMultiplayerBattle() {
   initBattle();
   opponentField = [];
   document.getElementById('opponent-name').innerText = '상대 준비 중';
+  document.getElementById('turn-indicator').innerText = '시작 몬스터를 놓아주세요';
+  document.getElementById('turn-indicator').style.color = '#2ecc71';
   document.getElementById('battle-action-info').innerText = '시작 몬스터 1장을 배치하세요. 양쪽 배치 후 선공이 결정됩니다.';
   renderBattleUI();
 }
@@ -110,11 +112,18 @@ function applyRoomState(state) {
     document.getElementById('opponent-name').innerText = state.opponentName;
     document.getElementById('battle-action-info').innerText = isMyTurn ? '내 턴입니다.' : '상대 턴을 기다리는 중입니다.';
   } else if (state.playerCount === 2) {
+    playerField = JSON.parse(JSON.stringify(state.myField || playerField || []));
     opponentField = JSON.parse(JSON.stringify(state.opponentField || []));
     document.getElementById('opponent-name').innerText = state.opponentName;
+    isMyTurn = false;
+    isInitialDeploymentPhase = playerField.length === 0;
+    const waiting = playerField.length > 0;
+    document.getElementById('turn-indicator').innerText = waiting ? '상대 시작 몬스터 대기 중' : '시작 몬스터를 놓아주세요';
+    document.getElementById('turn-indicator').style.color = '#2ecc71';
+    document.getElementById('battle-action-info').innerText = waiting ? '내 시작 몬스터 배치 완료. 상대 배치를 기다립니다.' : '손패에서 시작 몬스터 1장을 배치하세요.';
   }
   renderBattleUI();
-  updateTurnIndicator();
+  if (state.started) updateTurnIndicator();
   applyingNetworkState = false;
 }
 function sendReadyIfNeeded() {
@@ -151,7 +160,15 @@ function receiveMultiplayerEffect(payload) {
     return;
   }
   if (effect.type === 'deploy') {
-    requestAnimationFrame(() => animateMonsterDeploy(effect.card || {}, Number(effect.fieldIndex) || 0, true));
+    const index = Math.max(0, Math.min(2, Number(effect.fieldIndex) || 0));
+    const card = JSON.parse(JSON.stringify(effect.card || {}));
+    if (!card.id) return;
+    if (card.currentHp == null) card.currentHp = card.hp;
+    if (!Array.isArray(card.equippedItems)) card.equippedItems = [];
+    opponentField[index] = card;
+    opponentField = opponentField.filter(Boolean).slice(0, 3);
+    renderBattleUI();
+    requestAnimationFrame(() => animateMonsterDeploy(card, index, true));
     return;
   }
   if (effect.type === 'skill') {
