@@ -11,6 +11,7 @@ const io = new Server(server, {
   transports: ['websocket', 'polling']
 });
 const rooms = new Map();
+let matchmakingSocketId = null;
 
 app.disable('x-powered-by');
 app.use(express.static(__dirname));
@@ -71,7 +72,49 @@ function leaveRoom(socket) {
   socket.data.roomCode = null;
 }
 
+function addMatchedPlayer(room, socket, name) {
+  room.players.push({
+    id: socket.id,
+    name: String(name || '플레이어').slice(0, 20),
+    field: [],
+    trash: [],
+    ready: false
+  });
+  socket.join(room.code);
+  socket.data.roomCode = room.code;
+}
+
 io.on('connection', socket => {
+  socket.on('matchmaking:join', ({ name } = {}) => {
+    leaveRoom(socket);
+    if (matchmakingSocketId && matchmakingSocketId !== socket.id) {
+      const waiting = io.sockets.sockets.get(matchmakingSocketId);
+      if (waiting) {
+        let roomCode;
+        do roomCode = code(); while (rooms.has(roomCode));
+        const room = { code: roomCode, players: [], started: false, turn: null };
+        rooms.set(roomCode, room);
+        addMatchedPlayer(room, waiting, waiting.data.matchmakingName || '플레이어');
+        addMatchedPlayer(room, socket, name);
+        matchmakingSocketId = null;
+        waiting.data.matchmakingName = null;
+        socket.data.matchmakingName = null;
+        io.to(room.code).emit('matchmaking:matched', { roomCode });
+        broadcast(room);
+        return;
+      }
+      matchmakingSocketId = null;
+    }
+    matchmakingSocketId = socket.id;
+    socket.data.matchmakingName = String(name || '플레이어').slice(0, 20);
+    socket.emit('matchmaking:waiting');
+  });
+
+  socket.on('matchmaking:cancel', () => {
+    if (matchmakingSocketId === socket.id) matchmakingSocketId = null;
+    socket.data.matchmakingName = null;
+  });
+
   socket.on('room:create', ({ name } = {}, ack = () => {}) => {
     leaveRoom(socket);
     let roomCode;
@@ -139,35 +182,20 @@ io.on('connection', socket => {
     broadcast(room);
   });
 
-  socket.on('battle:deploy', ({ fieldIndex, card } = {}) => {
-    const room = rooms.get(socket.data.roomCode);
-    if (!room || !room.started || room.turn !== socket.id) return;
-
-    const player = room.players.find(item => item.id === socket.id);
-    if (!player || !card || typeof card !== 'object' || !card.id) return;
-
-    const safeIndex = Math.max(0, Math.min(2, Number(fieldIndex) || 0));
-    const cleanCard = JSON.parse(JSON.stringify(card));
-    if (cleanCard.currentHp == null && cleanCard.hp != null) cleanCard.currentHp = cleanCard.hp;
-    if (!Array.isArray(cleanCard.equippedItems)) cleanCard.equippedItems = [];
-
-    if (!Array.isArray(player.field)) player.field = [];
-    player.field[safeIndex] = cleanCard;
-    player.field = player.field.filter(Boolean).slice(0, 3);
-    broadcast(room);
-  });
-
   socket.on('battle:fx', payload => {
     const roomCode = String(payload?.roomCode || socket.data.roomCode || '').trim().toUpperCase();
     const effect = payload?.effect;
-    const allowed = new Set(['item', 'damage', 'awakening']);
+    const allowed = new Set(['item', 'damage', 'awakening', 'skill-cast', 'evolution']);
     if (!roomCode || !effect || !allowed.has(effect.type)) return;
     if (socket.data.roomCode !== roomCode || !socket.rooms.has(roomCode)) return;
     socket.to(roomCode).emit('battle:fx', { effect });
   });
 
   socket.on('room:leave', () => leaveRoom(socket));
-  socket.on('disconnect', () => leaveRoom(socket));
+  socket.on('disconnect', () => {
+    if (matchmakingSocketId === socket.id) matchmakingSocketId = null;
+    leaveRoom(socket);
+  });
 });
 
 const PORT = Number(process.env.PORT) || 10000;
