@@ -740,30 +740,19 @@ function animateMonsterDeploy(card, fieldIndex, remote = false) {
     const slots = document.getElementById(remote ? 'opponent-field-slots' : 'player-field-slots');
     const target = slots?.children[fieldIndex] || slots;
     if (!target) return;
-    document.querySelectorAll('.deploy-card-effect').forEach(node => node.remove());
     const rect = target.getBoundingClientRect();
-    const imageUrl = String(card?.image || '').replace(/["'()\\]/g, '');
     const effect = document.createElement('div');
     effect.className = `deploy-card-effect ${remote ? 'remote' : 'local'}`;
-    effect.style.cssText = 'position:fixed;inset:0;z-index:25000;pointer-events:none;overflow:hidden;';
-    effect.innerHTML = `<div class="deploy-card-back" style="position:fixed;width:105px;height:178px;max-width:105px;max-height:178px;overflow:hidden">GOA</div><div class="deploy-card-front" style="position:fixed;width:105px;height:178px;max-width:105px;max-height:178px;overflow:hidden"><div class="deploy-card-art" style="width:87px;height:125px;max-width:87px;max-height:125px;background-image:url('${imageUrl}');background-size:cover;background-position:center;background-repeat:no-repeat"></div><strong>${card?.name || '몬스터'}</strong></div><div class="deploy-impact"></div>`;
+    effect.innerHTML = `<div class="deploy-card-back">GOA</div><div class="deploy-card-front"><img src="${card.image || ''}" alt=""><strong>${card.name || '몬스터'}</strong></div><div class="deploy-impact"></div>`;
     effect.style.setProperty('--deploy-start-x', `${window.innerWidth / 2}px`);
     effect.style.setProperty('--deploy-start-y', `${remote ? window.innerHeight * .12 : window.innerHeight * .88}px`);
     effect.style.setProperty('--deploy-end-x', `${rect.left + rect.width / 2}px`);
     effect.style.setProperty('--deploy-end-y', `${rect.top + rect.height / 2}px`);
     document.body.appendChild(effect);
-    setTimeout(() => effect.remove(), 1600);
+    setTimeout(() => effect.remove(), 1500);
 }
 function broadcastDeployEffect(card, fieldIndex) {
-    const snapshot = JSON.parse(JSON.stringify(playerField[fieldIndex] || card));
-    emitMultiplayerEffect({ type: 'deploy', effectId: createEffectId('deploy'), fieldIndex, card: snapshot });
-    if (gameMode === 'multiplayer' && socket) {
-        socket.emit('battle:deploy', { fieldIndex, card: snapshot });
-        if (!multiplayerStarted && !readySent) {
-            readySent = true;
-            socket.emit('battle:ready', { field: playerField });
-        }
-    }
+    emitMultiplayerEffect({ type: 'deploy', effectId: createEffectId('deploy'), fieldIndex, card: { id: card.id, name: card.name, image: card.image } });
 }
 function showStatusSkillEffect(statusType, attackerIndex, targetIndex, remote = false) {
     const attackerSlots = document.getElementById(remote ? 'opponent-field-slots' : 'player-field-slots');
@@ -2089,11 +2078,6 @@ function updateTurnIndicator(suppressBanner = false) {
     }
     const mode = typeof gameMode === 'string' ? gameMode : 'bot';
     const started = typeof multiplayerStarted === 'boolean' ? multiplayerStarted : false;
-    if (mode === 'multiplayer' && !started) {
-        indicator.innerText = playerField.length ? '상대 시작 몬스터 대기 중' : '시작 몬스터를 놓아주세요';
-        indicator.style.color = '#2ecc71';
-        return;
-    }
     const turnKey = `${mode}:${isMyTurn ? 'mine' : 'opponent'}:${started}`;
     if (isMyTurn) {
         indicator.innerText = '내 턴 (행동 가능)';

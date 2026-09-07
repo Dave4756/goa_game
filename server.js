@@ -153,16 +153,6 @@ io.on('connection', socket => {
     broadcast(room);
   });
 
-  socket.on('battle:deploy', ({ fieldIndex, card } = {}) => {
-    const room = rooms.get(socket.data.roomCode);
-    const player = room?.players.find(item => item.id === socket.id);
-    if (!room || !player || room.started || !card?.id) return;
-    const index = Math.max(0, Math.min(2, Number(fieldIndex) || 0));
-    player.field[index] = JSON.parse(JSON.stringify(card));
-    player.field = player.field.filter(Boolean).slice(0, 3);
-    broadcast(room);
-  });
-
   socket.on('battle:ready', ({ field } = {}) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.started) return;
@@ -173,7 +163,7 @@ io.on('connection', socket => {
     if (room.players.length === 2 && room.players.every(item => item.ready)) {
       room.started = true;
       room.turn = room.players[Math.floor(Math.random() * 2)].id;
-      io.to(room.code).emit('battle:started', { firstPlayerId: room.turn });
+      io.to(room.code).emit('battle:started');
     }
     broadcast(room);
   });
@@ -195,7 +185,7 @@ io.on('connection', socket => {
   socket.on('battle:fx', payload => {
     const roomCode = String(payload?.roomCode || socket.data.roomCode || '').trim().toUpperCase();
     const effect = payload?.effect;
-    const allowed = new Set(['item', 'damage', 'awakening', 'draw', 'deploy', 'skill', 'skill-cast', 'evolution']);
+    const allowed = new Set(['item', 'damage', 'awakening', 'skill-cast', 'evolution']);
     if (!roomCode || !effect || !allowed.has(effect.type)) return;
     if (socket.data.roomCode !== roomCode || !socket.rooms.has(roomCode)) return;
     socket.to(roomCode).emit('battle:fx', { effect });

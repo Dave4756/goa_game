@@ -4,6 +4,7 @@ let multiplayerRoom = null;
 let multiplayerStarted = false;
 let applyingNetworkState = false;
 let readySent = false;
+let matchmakingWaiting = false;
 const processedEffectIds = new Set();
 
 function ensureMultiplayerUI() {
@@ -12,18 +13,64 @@ function ensureMultiplayerUI() {
     <div id="multiplayer-overlay">
       <div class="multiplayer-panel">
         <h2>온라인 멀티플레이</h2>
-        <p id="multiplayer-status">방을 만들거나 참가하세요.</p>
-        <input id="multiplayer-room-code" maxlength="6" placeholder="방 코드 6자리">
-        <div class="multiplayer-buttons">
-          <button id="create-room-btn">방 만들기</button>
-          <button id="join-room-btn">방 참가</button>
-          <button id="close-multiplayer-btn" class="back-btn">닫기</button>
+        <p id="multiplayer-status">플레이 방식을 선택하세요.</p>
+
+        <button id="quick-match-btn" type="button">빠른 매치메이킹</button>
+        <button id="code-mode-btn" type="button">방 코드로 플레이</button>
+
+        <div id="code-mode-panel" hidden>
+          <input id="multiplayer-room-code" maxlength="6" autocomplete="off" placeholder="방 코드 6자리">
+          <div class="multiplayer-buttons">
+            <button id="create-room-btn" type="button">방 만들기</button>
+            <button id="join-room-btn" type="button">방 참가</button>
+          </div>
         </div>
+
+        <button id="close-multiplayer-btn" type="button" class="back-btn">닫기</button>
       </div>
     </div>`);
+
+  document.getElementById('quick-match-btn').onclick = toggleQuickMatchmaking;
+  document.getElementById('code-mode-btn').onclick = toggleCodeMode;
   document.getElementById('create-room-btn').onclick = createMultiplayerRoom;
   document.getElementById('join-room-btn').onclick = joinMultiplayerRoom;
   document.getElementById('close-multiplayer-btn').onclick = closeMultiplayerUI;
+  document.getElementById('multiplayer-room-code').oninput = event => {
+    event.target.value = event.target.value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 6);
+  };
+}
+
+function updateMatchmakingButton() {
+  const button = document.getElementById('quick-match-btn');
+  if (!button) return;
+  button.textContent = matchmakingWaiting ? '매치메이킹 취소' : '빠른 매치메이킹';
+  button.classList.toggle('waiting', matchmakingWaiting);
+}
+
+function toggleCodeMode() {
+  const panel = document.getElementById('code-mode-panel');
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) {
+    setMultiplayerStatus('방을 만들거나 6자리 코드를 입력하세요.');
+    document.getElementById('multiplayer-room-code')?.focus();
+  }
+}
+
+function toggleQuickMatchmaking() {
+  const client = connectSocket();
+  if (matchmakingWaiting) {
+    client.emit('matchmaking:cancel');
+    matchmakingWaiting = false;
+    updateMatchmakingButton();
+    setMultiplayerStatus('매치메이킹을 취소했습니다.');
+    return;
+  }
+  document.getElementById('code-mode-panel').hidden = true;
+  matchmakingWaiting = true;
+  updateMatchmakingButton();
+  setMultiplayerStatus('온라인 상대를 찾는 중입니다...');
+  client.emit('matchmaking:join', { name: playerNickname });
 }
 
 function installModeButtons() {
@@ -48,6 +95,17 @@ function connectSocket() {
   socket.on('battle:fx', receiveMultiplayerEffect);
   socket.on('room:notice', message => setMultiplayerStatus(message));
   socket.on('battle:started', () => { multiplayerStarted = true; });
+  socket.on('matchmaking:waiting', () => {
+    matchmakingWaiting = true;
+    updateMatchmakingButton();
+    setMultiplayerStatus('온라인 상대를 찾는 중입니다...');
+  });
+  socket.on('matchmaking:matched', ({ roomCode } = {}) => {
+    matchmakingWaiting = false;
+    updateMatchmakingButton();
+    multiplayerRoom = roomCode || multiplayerRoom;
+    setMultiplayerStatus(`매칭 완료! 방 코드 ${multiplayerRoom}`);
+  });
   socket.on('disconnect', () => setMultiplayerStatus('서버 연결이 끊어졌습니다.'));
   return socket;
 }
@@ -58,6 +116,9 @@ function openMultiplayerUI() {
   document.getElementById('multiplayer-overlay').classList.add('active');
 }
 function closeMultiplayerUI() {
+  if (matchmakingWaiting && socket) socket.emit('matchmaking:cancel');
+  matchmakingWaiting = false;
+  updateMatchmakingButton();
   document.getElementById('multiplayer-overlay')?.classList.remove('active');
 }
 function setMultiplayerStatus(message) {
@@ -65,6 +126,7 @@ function setMultiplayerStatus(message) {
   if (el) el.textContent = message;
 }
 function createMultiplayerRoom() {
+  if (matchmakingWaiting) toggleQuickMatchmaking();
   connectSocket().emit('room:create', { name: playerNickname }, result => {
     if (!result.ok) return setMultiplayerStatus(result.message);
     multiplayerRoom = result.roomCode;
@@ -73,7 +135,9 @@ function createMultiplayerRoom() {
   });
 }
 function joinMultiplayerRoom() {
+  if (matchmakingWaiting) toggleQuickMatchmaking();
   const roomCode = document.getElementById('multiplayer-room-code').value.trim().toUpperCase();
+  if (roomCode.length !== 6) return setMultiplayerStatus('방 코드 6자리를 입력하세요.');
   connectSocket().emit('room:join', { roomCode, name: playerNickname }, result => {
     if (!result.ok) return setMultiplayerStatus(result.message);
     multiplayerRoom = result.roomCode;
@@ -89,8 +153,6 @@ function beginMultiplayerBattle() {
   initBattle();
   opponentField = [];
   document.getElementById('opponent-name').innerText = '상대 준비 중';
-  document.getElementById('turn-indicator').innerText = '시작 몬스터를 놓아주세요';
-  document.getElementById('turn-indicator').style.color = '#2ecc71';
   document.getElementById('battle-action-info').innerText = '시작 몬스터 1장을 배치하세요. 양쪽 배치 후 선공이 결정됩니다.';
   renderBattleUI();
 }
@@ -112,18 +174,11 @@ function applyRoomState(state) {
     document.getElementById('opponent-name').innerText = state.opponentName;
     document.getElementById('battle-action-info').innerText = isMyTurn ? '내 턴입니다.' : '상대 턴을 기다리는 중입니다.';
   } else if (state.playerCount === 2) {
-    playerField = JSON.parse(JSON.stringify(state.myField || playerField || []));
     opponentField = JSON.parse(JSON.stringify(state.opponentField || []));
     document.getElementById('opponent-name').innerText = state.opponentName;
-    isMyTurn = false;
-    isInitialDeploymentPhase = playerField.length === 0;
-    const waiting = playerField.length > 0;
-    document.getElementById('turn-indicator').innerText = waiting ? '상대 시작 몬스터 대기 중' : '시작 몬스터를 놓아주세요';
-    document.getElementById('turn-indicator').style.color = '#2ecc71';
-    document.getElementById('battle-action-info').innerText = waiting ? '내 시작 몬스터 배치 완료. 상대 배치를 기다립니다.' : '손패에서 시작 몬스터 1장을 배치하세요.';
   }
   renderBattleUI();
-  if (state.started) updateTurnIndicator();
+  updateTurnIndicator();
   applyingNetworkState = false;
 }
 function sendReadyIfNeeded() {
@@ -160,15 +215,7 @@ function receiveMultiplayerEffect(payload) {
     return;
   }
   if (effect.type === 'deploy') {
-    const index = Math.max(0, Math.min(2, Number(effect.fieldIndex) || 0));
-    const card = JSON.parse(JSON.stringify(effect.card || {}));
-    if (!card.id) return;
-    if (card.currentHp == null) card.currentHp = card.hp;
-    if (!Array.isArray(card.equippedItems)) card.equippedItems = [];
-    opponentField[index] = card;
-    opponentField = opponentField.filter(Boolean).slice(0, 3);
-    renderBattleUI();
-    requestAnimationFrame(() => animateMonsterDeploy(card, index, true));
+    requestAnimationFrame(() => animateMonsterDeploy(effect.card || {}, Number(effect.fieldIndex) || 0, true));
     return;
   }
   if (effect.type === 'skill') {
