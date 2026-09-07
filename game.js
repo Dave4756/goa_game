@@ -474,11 +474,11 @@ function renderBattleUI() {
                     turnHeal: 0
                 });
                 const deployedIndex = playerField.length - 1;
+                isInitialDeploymentPhase = false;
+                document.getElementById('battle-action-info').innerText = "상대의 시작 몬스터 배치를 기다리는 중입니다.";
+                renderBattleUI();
                 requestAnimationFrame(() => animateMonsterDeploy(deployed, deployedIndex));
                 broadcastDeployEffect(deployed, deployedIndex);
-                isInitialDeploymentPhase = false;
-                document.getElementById('battle-action-info').innerText = "필드 카드를 클릭하여 상세정보 및 스킬을 사용하세요.";
-                renderBattleUI();
             } else {
                 openHandCardModal(card);
             }
@@ -743,7 +743,7 @@ function animateMonsterDeploy(card, fieldIndex, remote = false) {
     const rect = target.getBoundingClientRect();
     const effect = document.createElement('div');
     effect.className = `deploy-card-effect ${remote ? 'remote' : 'local'}`;
-    effect.innerHTML = `<div class="deploy-card-back">GOA</div><div class="deploy-card-front"><img src="${card.image || ''}" alt=""><strong>${card.name || '몬스터'}</strong></div><div class="deploy-impact"></div>`;
+    effect.innerHTML = `<div class="deploy-card-back">GOA</div><div class="deploy-card-front"><div class="deploy-card-image-box"><img src="${card.image || ''}" alt="" draggable="false"></div><strong>${card.name || '몬스터'}</strong></div><div class="deploy-impact"></div>`;
     effect.style.setProperty('--deploy-start-x', `${window.innerWidth / 2}px`);
     effect.style.setProperty('--deploy-start-y', `${remote ? window.innerHeight * .12 : window.innerHeight * .88}px`);
     effect.style.setProperty('--deploy-end-x', `${rect.left + rect.width / 2}px`);
@@ -1125,7 +1125,8 @@ function allowDrop(e) { e.preventDefault(); }
 
 function dropToField(e) {
     e.preventDefault();
-    if (!isMyTurn) {
+    const canDeployInitialMonster = isInitialDeploymentPhase && gameMode === 'multiplayer';
+    if (!isMyTurn && !canDeployInitialMonster) {
         document.getElementById('battle-action-info').innerText = "상대 턴에는 카드를 낼 수 없습니다!";
         return;
     }
@@ -1167,13 +1168,15 @@ function dropToField(e) {
                 turnHeal: 0
             });
             const deployedIndex = playerField.length - 1;
-            requestAnimationFrame(() => animateMonsterDeploy(card, deployedIndex));
-            broadcastDeployEffect(card, deployedIndex);
             if (isInitialDeploymentPhase) {
                 isInitialDeploymentPhase = false;
-                document.getElementById('battle-action-info').innerText = "필드 카드를 클릭하여 상세정보 및 스킬을 사용하세요.";
+                document.getElementById('battle-action-info').innerText = gameMode === 'multiplayer'
+                    ? "상대의 시작 몬스터 배치를 기다리는 중입니다."
+                    : "필드 카드를 클릭하여 상세정보 및 스킬을 사용하세요.";
             }
             renderBattleUI();
+            requestAnimationFrame(() => animateMonsterDeploy(card, deployedIndex));
+            broadcastDeployEffect(card, deployedIndex);
         }
     } catch (err) {
         if (dataStr !== "") {
@@ -1190,13 +1193,15 @@ function dropToField(e) {
                 turnHeal: 0
             });
             const deployedIndex = playerField.length - 1;
-            requestAnimationFrame(() => animateMonsterDeploy(card, deployedIndex));
-            broadcastDeployEffect(card, deployedIndex);
             if (isInitialDeploymentPhase) {
                 isInitialDeploymentPhase = false;
-                document.getElementById('battle-action-info').innerText = "필드 카드를 클릭하여 상세정보 및 스킬을 사용하세요.";
+                document.getElementById('battle-action-info').innerText = gameMode === 'multiplayer'
+                    ? "상대의 시작 몬스터 배치를 기다리는 중입니다."
+                    : "필드 카드를 클릭하여 상세정보 및 스킬을 사용하세요.";
             }
             renderBattleUI();
+            requestAnimationFrame(() => animateMonsterDeploy(card, deployedIndex));
+            broadcastDeployEffect(card, deployedIndex);
         }
     }
 }
