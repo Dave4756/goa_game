@@ -2,29 +2,29 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>고아 카드 게임</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="game-container">
-        
         <!-- 1. 메인 메뉴 화면 -->
         <div id="main-menu" class="screen active">
             <h1>🔥 고아 카드 게임 🔥</h1>
             <div class="menu-buttons">
-                <button onclick="changeScreen('nickname-screen')">닉네임 설정</button>
-                <button onclick="changeScreen('deck-screen')">덱 편성</button>
-                <button onclick="startMatchmakingProcess()">매치 메이킹</button>
+                <button type="button" onclick="changeScreen('nickname-screen')">닉네임 설정</button>
+                <button type="button" onclick="changeScreen('deck-screen')">덱 편성</button>
+                <button type="button" onclick="startMatchmakingProcess()">매치 메이킹</button>
             </div>
         </div>
 
-        <!-- 2. 닉네임 설정 화면 (설정 완료 시 바로 메인으로 가도록 수정) -->
+        <!-- 2. 닉네임 설정 화면 -->
         <div id="nickname-screen" class="screen">
             <h2>닉네임 설정</h2>
             <p>현재 닉네임: <span id="display-nickname">플레이어1</span></p>
-            <input type="text" id="nickname-input" placeholder="사용할 닉네임 입력">
-            <button onclick="saveNickname()">저장하기</button>
-            <button class="back-btn" onclick="changeScreen('main-menu')">돌아가기</button>
+            <input type="text" id="nickname-input" maxlength="20" placeholder="사용할 닉네임 입력">
+            <button type="button" onclick="saveNickname()">저장하기</button>
+            <button type="button" class="back-btn" onclick="changeScreen('main-menu')">돌아가기</button>
         </div>
 
         <!-- 3. 덱 빌딩 화면 -->
@@ -41,7 +41,7 @@
                     <div id="my-deck" class="card-grid"></div>
                 </div>
             </div>
-            <button class="back-btn" onclick="changeScreen('main-menu')">돌아가기</button>
+            <button type="button" class="back-btn" onclick="changeScreen('main-menu')">돌아가기</button>
         </div>
 
         <!-- 4. 동전 던지기 연출 화면 -->
@@ -53,42 +53,40 @@
                     <div class="coin-face back">뒤 (후공)</div>
                 </div>
             </div>
-            <p id="coin-result-text" style="font-size: 20px; margin-top: 20px;">동전을 던지는 중...</p>
+            <p id="coin-result-text" style="font-size:20px; margin-top:20px;">동전을 던지는 중...</p>
         </div>
 
         <!-- 5. 실제 배틀 화면 -->
         <div id="battle-screen" class="screen">
             <div id="battle-board">
-                <!-- 상대방(더미) 필드 -->
                 <div class="field-zone" id="opponent-field-zone">
                     <h3>상대: <span id="opponent-name">허수아비 봇</span></h3>
                     <div id="opponent-field-slots" class="multi-slot-container"></div>
                 </div>
 
-                <hr style="border-color: rgba(255,255,255,0.2); width:100%; margin: 5px 0;">
+                <hr style="border-color:rgba(255,255,255,.2); width:100%; margin:5px 0;">
 
-                <!-- 내 필드 -->
                 <div class="field-zone" id="player-field-dropzone" ondragover="allowDrop(event)" ondrop="dropToField(event)">
                     <h3>내 필드 (<span id="display-player-name">플레이어1</span>) - 드래그해서 배치</h3>
                     <div id="player-field-slots" class="multi-slot-container"></div>
                 </div>
 
-                <!-- 내 손패 영역 -->
                 <div class="hand-zone" id="battle-player-hand"></div>
 
-                <!-- 턴 제어 하단 바 -->
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-                    <span id="turn-indicator" style="font-weight: bold; color: #f1c40f;">내 턴</span>
-                    <div id="battle-action-info" style="font-size: 12px; color: #3498db;">포켓몬을 누르고 사용할 스킬을 선택하세요.</div>
-                    <button onclick="endMyTurn()">턴 종료 (스킵)</button>
-                    <button class="back-btn" style="margin:0;" onclick="changeScreen('main-menu')">포기하고 나가기</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:5px;">
+                    <span id="turn-indicator" style="font-weight:bold; color:#f1c40f;">내 턴</span>
+                    <div id="battle-action-info" style="font-size:12px; color:#3498db;">몬스터를 누르고 사용할 스킬을 선택하세요.</div>
+                    <button type="button" onclick="endMyTurn()">턴 종료 (스킵)</button>
+                    <button type="button" class="back-btn" style="margin:0;" onclick="changeScreen('main-menu')">포기하고 나가기</button>
                 </div>
             </div>
         </div>
-
     </div>
+
+    <!-- 로드 순서 중요: Socket.IO → 게임 → 네트워크 → 배치 동기화 hotfix -->
     <script src="/socket.io/socket.io.js"></script>
     <script src="game.js"></script>
     <script src="network.js"></script>
+    <script src="deploy_sync_hotfix.js"></script>
 </body>
 </html>

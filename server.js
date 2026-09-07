@@ -139,10 +139,28 @@ io.on('connection', socket => {
     broadcast(room);
   });
 
+  socket.on('battle:deploy', ({ fieldIndex, card } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || !room.started || room.turn !== socket.id) return;
+
+    const player = room.players.find(item => item.id === socket.id);
+    if (!player || !card || typeof card !== 'object' || !card.id) return;
+
+    const safeIndex = Math.max(0, Math.min(2, Number(fieldIndex) || 0));
+    const cleanCard = JSON.parse(JSON.stringify(card));
+    if (cleanCard.currentHp == null && cleanCard.hp != null) cleanCard.currentHp = cleanCard.hp;
+    if (!Array.isArray(cleanCard.equippedItems)) cleanCard.equippedItems = [];
+
+    if (!Array.isArray(player.field)) player.field = [];
+    player.field[safeIndex] = cleanCard;
+    player.field = player.field.filter(Boolean).slice(0, 3);
+    broadcast(room);
+  });
+
   socket.on('battle:fx', payload => {
     const roomCode = String(payload?.roomCode || socket.data.roomCode || '').trim().toUpperCase();
     const effect = payload?.effect;
-    const allowed = new Set(['item', 'damage', 'awakening', 'draw', 'deploy', 'skill']);
+    const allowed = new Set(['item', 'damage', 'awakening']);
     if (!roomCode || !effect || !allowed.has(effect.type)) return;
     if (socket.data.roomCode !== roomCode || !socket.rooms.has(roomCode)) return;
     socket.to(roomCode).emit('battle:fx', { effect });
