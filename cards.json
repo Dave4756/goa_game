@@ -272,5 +272,85 @@
         "description": "카드에 설정된 특수 효과를 발동합니다."
       }
     ]
+  },
+  {
+    "id": "card_knight_jh",
+    "name": "기사 전장현",
+    "image": "image/j.png",
+    "type": "MONSTER",
+    "hp": 200,
+    "passive": {
+      "name": "기사도 정신",
+      "type": "equipment_damage_bonus",
+      "amountPerItem": 20,
+      "description": "부착된 아이템 1개당 스킬 피해가 20 증가합니다."
+    },
+    "skills": [
+      {
+        "name": "울어라 탈모참마도",
+        "damage": 40,
+        "type": "single",
+        "element": "normal",
+        "description": "기본 피해 40. 부착 아이템마다 기사도 정신으로 피해가 20 증가합니다."
+      }
+    ]
+  },
+  {
+    "id": "item_hyper_focus",
+    "name": "HYPER FOCUS",
+    "type": "ITEM",
+    "image": "image/learning.png",
+    "isConsumable": true,
+    "skills": [
+      {
+        "name": "집중 유지",
+        "type": "survive_at_one",
+        "duration": 2,
+        "description": "2턴 동안 대상의 HP가 1 미만으로 내려가지 않습니다."
+      }
+    ]
+  },
+  {
+    "id": "item_cleanse",
+    "name": "야 이 시발",
+    "type": "ITEM",
+    "image": "image/eraser.png",
+    "isConsumable": true,
+    "skills": [
+      {
+        "name": "상태이상 해제",
+        "type": "cleanse_all",
+        "description": "내 필드에 적용된 모든 상태이상을 해제합니다."
+      }
+    ]
+  },
+  {
+    "id": "item_positive_negative",
+    "name": "Positive negative",
+    "type": "ITEM",
+    "image": "image/spoon.jpeg",
+    "isConsumable": true,
+    "skills": [
+      {
+        "name": "운명의 동전",
+        "type": "coin_heal_or_damage",
+        "amount": 50,
+        "description": "내 또는 상대 몬스터 하나에게 사용합니다. 앞면이면 50 회복, 뒷면이면 50 피해입니다."
+      }
+    ]
+  },
+  {
+    "id": "item_ai_ban",
+    "name": "생성형 ai 사용 금지!",
+    "type": "ITEM",
+    "image": "image/backpack.jpeg",
+    "isConsumable": true,
+    "skills": [
+      {
+        "name": "손패 반납",
+        "type": "return_opponent_hand",
+        "description": "상대의 모든 손패를 덱으로 되돌리고 섞습니다."
+      }
+    ]
   }
 ]

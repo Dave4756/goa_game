@@ -10,6 +10,9 @@ const server = http.createServer(app);
 const io = new Server(server, {
   transports: ['websocket', 'polling']
 });
+const cardDatabase = require('./cards.json');
+const gameConfig = require('./game-config.json');
+const cardsById = new Map(cardDatabase.map(card => [card.id, card]));
 const rooms = new Map();
 let matchmakingSocketId = null;
 
@@ -17,6 +20,7 @@ app.disable('x-powered-by');
 app.use(express.static(__dirname));
 app.get('/health', (_req, res) => res.status(200).send('ok'));
 app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/api/game-config', (_req, res) => res.json(gameConfig));
 
 function code() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -28,6 +32,19 @@ function code() {
 function cloneCards(cards, limit = 3) {
   if (!Array.isArray(cards)) return [];
   return JSON.parse(JSON.stringify(cards.slice(0, limit)));
+}
+
+function sanitizeDeck(deck) {
+  if (!Array.isArray(deck)) return [];
+  const maxCopies = Number(gameConfig.deck?.maxCopiesPerCard) || 2;
+  const maxCards = Number(gameConfig.deck?.maxCards) || 20;
+  const counts = new Map();
+  return deck.map(entry => cardsById.get(entry?.id)).filter(card => {
+    if (!card || card.isUnobtainable || card.id === 'dummy_card') return false;
+    const count = (counts.get(card.id) || 0) + 1;
+    counts.set(card.id, count);
+    return count <= maxCopies;
+  }).slice(0, maxCards).map(card => JSON.parse(JSON.stringify(card)));
 }
 
 function view(room, socketId) {
@@ -43,6 +60,10 @@ function view(room, socketId) {
     opponentField: other?.field || [],
     myTrash: me?.trash || [],
     opponentTrash: other?.trash || [],
+    myHandCount: me?.handCount || 0,
+    opponentHandCount: other?.handCount || 0,
+    myDeckCount: me?.deckCount || 0,
+    opponentDeckCount: other?.deckCount || 0,
     isMyTurn: room.started && room.turn === socketId,
     playerCount: room.players.length
   };
@@ -78,6 +99,8 @@ function addMatchedPlayer(room, socket, name) {
     name: String(name || '플레이어').slice(0, 20),
     field: [],
     trash: [],
+    handCount: 0,
+    deckCount: 0,
     ready: false
   });
   socket.join(room.code);
@@ -126,6 +149,8 @@ io.on('connection', socket => {
       name: String(name || '플레이어').slice(0, 20),
       field: [],
       trash: [],
+      handCount: 0,
+      deckCount: 0,
       ready: false
     });
     socket.join(roomCode);
@@ -156,7 +181,7 @@ io.on('connection', socket => {
   socket.on('battle:deploy', ({ fieldIndex, card } = {}) => {
     const room = rooms.get(socket.data.roomCode);
     const player = room?.players.find(item => item.id === socket.id);
-    if (!room || !player || room.started || !card?.id) return;
+    if (!room || !player || !card?.id) return;
     const index = Math.max(0, Math.min(2, Number(fieldIndex) || 0));
     player.field[index] = JSON.parse(JSON.stringify(card));
     player.field = player.field.filter(Boolean).slice(0, 3);
@@ -178,6 +203,23 @@ io.on('connection', socket => {
     broadcast(room);
   });
 
+  // Private cards never leave the owning browser. The server only relays public
+  // counts, which lets the opponent see card backs without seeing card identities.
+  socket.on('battle:private-counts', ({ handCount, deckCount } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    const player = room?.players.find(item => item.id === socket.id);
+    if (!room || !player) return;
+    player.handCount = Math.max(0, Math.min(30, Number(handCount) || 0));
+    player.deckCount = Math.max(0, Math.min(30, Number(deckCount) || 0));
+    broadcast(room);
+  });
+
+  socket.on('battle:validate-deck', ({ deck } = {}, ack = () => {}) => {
+    const approvedDeck = sanitizeDeck(deck);
+    const minimum = Number(gameConfig.deck?.minCards) || 3;
+    ack({ ok: approvedDeck.length >= minimum, count: approvedDeck.length, minimum });
+  });
+
   socket.on('battle:commit', ({ myField, opponentField, myTrash, opponentTrash, endTurn } = {}) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || !room.started || room.turn !== socket.id) return;
@@ -195,7 +237,7 @@ io.on('connection', socket => {
   socket.on('battle:fx', payload => {
     const roomCode = String(payload?.roomCode || socket.data.roomCode || '').trim().toUpperCase();
     const effect = payload?.effect;
-    const allowed = new Set(['item', 'damage', 'awakening', 'draw', 'deploy', 'skill', 'skill-cast', 'evolution']);
+    const allowed = new Set(['item', 'damage', 'awakening', 'draw', 'deploy', 'skill', 'skill-cast', 'evolution', 'coin-effect', 'hand-reset']);
     if (!roomCode || !effect || !allowed.has(effect.type)) return;
     if (socket.data.roomCode !== roomCode || !socket.rooms.has(roomCode)) return;
     socket.to(roomCode).emit('battle:fx', { effect });

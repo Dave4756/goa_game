@@ -463,6 +463,12 @@ button:hover { background: #2980b9; }
     z-index: 20;
 }
 
+/* 상대 손패는 장수만 공개하고, 항상 카드 뒷면으로 표시합니다. */
+.opponent-hand-wrap { display:flex; flex-direction:column; align-items:center; gap:4px; margin:2px 0 8px; }
+#opponent-hand-zone { min-height:34px; display:flex; align-items:center; justify-content:center; padding:0 14px; }
+.opponent-card-back { width:25px; height:34px; margin-left:-12px; border:1px solid #f1c40f; border-radius:4px; background:repeating-linear-gradient(45deg,#172a45 0 5px,#395b7c 5px 10px); box-shadow:0 2px 4px rgba(0,0,0,.5); transform:rotate(calc((var(--opponent-hand-index) - 4) * 2deg)); }
+.opponent-card-back:first-child { margin-left:0; }
+
 /* 🌟 오른편 덱 더미 스타일 */
 .deck-pile {
     position: absolute;
@@ -498,6 +504,9 @@ button:hover { background: #2980b9; }
 #player-pile-container .deck-pile {
     position: static;
 }
+#opponent-pile-container { position:absolute; top:10px; right:15px; display:flex; flex-direction:column; gap:8px; z-index:2; }
+#opponent-pile-container .deck-pile { position:static; cursor:default; }
+.opponent-deck-pile { background:#34495e; border-color:#5d6d7e; }
 
 /* 🌟 카드 확대 모달창 스타일 */
 #card-modal-overlay {

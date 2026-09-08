@@ -15,8 +15,10 @@ let selectedAttackerIndex = null;
 let activeSkillIndex = null;
 let isInitialDeploymentPhase = false;
 let pendingItemCardIndex = null;
+let pendingEvolutionCardIndex = null;
 let lastTurnBannerKey = null;
 let battleEnded = false;
+let gameRules = { deck: { minCards: 3, maxCards: 20, maxCopiesPerCard: 2 } };
 
 function changeScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -60,8 +62,12 @@ function saveNickname() {
 
 async function loadCards() {
     try {
-        const res = await fetch('cards.json', { cache: 'no-store' });
-        cardDatabase = await res.json();
+        const [cardsResponse, rulesResponse] = await Promise.all([
+            fetch('cards.json', { cache: 'no-store' }),
+            fetch('/api/game-config', { cache: 'no-store' }).catch(() => null)
+        ]);
+        cardDatabase = await cardsResponse.json();
+        if (rulesResponse?.ok) gameRules = await rulesResponse.json();
         loadSavedData();
         renderCardCollection();
         renderMyDeck();
@@ -85,12 +91,14 @@ function renderCardCollection() {
 
 function addCardToDeck(card) {
     const count = myDeck.filter(c => c.id === card.id).length;
-    if (count >= 2) {
-        alert("동일한 카드는 덱에 최대 2장까지만 넣을 수 있습니다!");
+    const maxCopies = Number(gameRules.deck?.maxCopiesPerCard) || 2;
+    const maxCards = Number(gameRules.deck?.maxCards) || 20;
+    if (count >= maxCopies) {
+        alert(`동일한 카드는 덱에 최대 ${maxCopies}장까지만 넣을 수 있습니다!`);
         return;
     }
-    if (myDeck.length >= 20) {
-        alert("덱은 최대 20장까지 구성할 수 있습니다.");
+    if (myDeck.length >= maxCards) {
+        alert(`덱은 최대 ${maxCards}장까지 구성할 수 있습니다.`);
         return;
     }
     myDeck.push(JSON.parse(JSON.stringify(card)));
@@ -259,7 +267,9 @@ function createCardDOM(card, isBattleField = false, fIdx = null) {
             // 스킬 타겟 선택 중 확대 모달이 열리는 것을 방지합니다.
             if (fIdx === null) return;
 
-            if (pendingItemCardIndex !== null) {
+            if (pendingEvolutionCardIndex !== null) {
+                evolveMonsterFromHand(pendingEvolutionCardIndex, fIdx);
+            } else if (pendingItemCardIndex !== null) {
                 applyTargetItemToMonster(fIdx);
             } else {
                 openCardModal(card, fIdx);
@@ -329,6 +339,7 @@ function initBattle() {
     consumableItemUsedThisTurn = {};
     isInitialDeploymentPhase = true;
     pendingItemCardIndex = null;
+    pendingEvolutionCardIndex = null;
 
     drawInitialHand();
 
@@ -549,6 +560,8 @@ function openHandCardModal(card) {
     const handIdx = myHand.findIndex(c => c === card);
     if ((card.type === 'ITEM' || card.type === 'NORMAL_ITEM') && handIdx !== -1 && !isInitialDeploymentPhase) {
         actionBtnHtml = `<button class="skill-btn" style="background:#8e44ad; color:white; margin-top:10px; width:100%;" onclick="startItemUsageFromModal(${handIdx})">이 아이템 사용하기</button>`;
+    } else if (card.type !== 'EVOLUTION' && handIdx !== -1 && !isInitialDeploymentPhase) {
+        actionBtnHtml = `<button class="skill-btn" style="background:#27ae60; color:white; margin-top:10px; width:100%;" onclick="deployMonsterFromHand(${handIdx})">필드에 배치하기</button>`;
     }
 
     let headerRight = card.hp !== undefined ? `HP ${card.hp}` : `아이템`;
@@ -573,6 +586,34 @@ function openHandCardModal(card) {
     overlay.classList.add('active');
 }
 
+function createBattleMonster(card) {
+    return {
+        ...card,
+        currentHp: card.hp,
+        shieldTurns: 0,
+        shieldPercent: 0,
+        equippedItems: [],
+        damageBonus: 0,
+        damageReduction: 0,
+        turnHeal: 0
+    };
+}
+
+function deployMonsterFromHand(handIdx) {
+    if (!isMyTurn || isInitialDeploymentPhase) return;
+    const card = myHand[handIdx];
+    if (!card || card.type === 'ITEM' || card.type === 'NORMAL_ITEM' || card.type === 'EVOLUTION') return;
+    if (playerField.length >= 3) return alert('필드에는 몬스터를 최대 3장까지 배치할 수 있습니다.');
+    closeCardModal();
+    myHand.splice(handIdx, 1);
+    playerField.push(createBattleMonster(card));
+    const fieldIndex = playerField.length - 1;
+    requestAnimationFrame(() => animateMonsterDeploy(card, fieldIndex));
+    broadcastDeployEffect(card, fieldIndex);
+    document.getElementById('battle-action-info').innerText = `[${card.name}]을(를) 필드에 배치했습니다.`;
+    renderBattleUI();
+}
+
 function startItemUsageFromModal(handIdx) {
     closeCardModal();
     if (!isMyTurn) {
@@ -582,7 +623,7 @@ function startItemUsageFromModal(handIdx) {
     const itemCard = myHand[handIdx];
     const skill = itemCard.skills && itemCard.skills[0] ? itemCard.skills[0] : {};
 
-    const consumableTypes = ['draw_monster', 'draw_random', 'redirect_attack', 'confuse_all'];
+    const consumableTypes = ['draw_monster', 'draw_random', 'redirect_attack', 'confuse_all', 'cleanse_all', 'coin_heal_or_damage', 'return_opponent_hand', 'survive_at_one'];
     if (consumableTypes.includes(skill.type)) {
         if (consumableItemUsedThisTurn[skill.type]) {
             document.getElementById('battle-action-info').innerText = `[${itemCard.name}] - 같은 종류의 소모형 아이템은 한 턴에 하나만 사용 가능합니다!`;
@@ -604,6 +645,19 @@ function startItemUsageFromModal(handIdx) {
 
     if (skill.type === 'confuse_all') {
         useConfuseAllItem(handIdx);
+        return;
+    }
+
+    if (skill.type === 'cleanse_all') {
+        useCleanseAllItem(handIdx);
+        return;
+    }
+    if (skill.type === 'coin_heal_or_damage') {
+        usePositiveNegativeItem(handIdx);
+        return;
+    }
+    if (skill.type === 'return_opponent_hand') {
+        useReturnOpponentHandItem(handIdx);
         return;
     }
 
@@ -653,6 +707,49 @@ function useConfuseAllItem(handIdx) {
 
     document.getElementById('battle-action-info').innerText = `[${itemCard.name}] 사용! 상대 모든 몹이 혼란 상태가 되었습니다!`;
     renderBattleUI();
+}
+
+function consumeItem(handIdx, itemCard) {
+    myHand.splice(handIdx, 1);
+    playerTrash.push(itemCard);
+    pendingItemCardIndex = null;
+    renderBattleUI();
+}
+
+function useCleanseAllItem(handIdx) {
+    const itemCard = myHand[handIdx];
+    if (!itemCard) return;
+    playerField.forEach(clearNegativeStatuses);
+    playItemUseEffect(itemCard, null, handIdx);
+    consumeItem(handIdx, itemCard);
+    document.getElementById('battle-action-info').innerText = `[${itemCard.name}] 사용! 내 필드의 상태이상이 모두 해제되었습니다.`;
+}
+
+function usePositiveNegativeItem(handIdx) {
+    const itemCard = myHand[handIdx];
+    if (!itemCard) return;
+    const useOnOpponent = confirm('확인: 상대 몬스터에게 사용합니다.\n취소: 내 몬스터에게 사용합니다.');
+    const targets = useOnOpponent ? opponentField : playerField;
+    if (!targets.length) return alert('선택한 쪽 필드에 몬스터가 없습니다.');
+    const index = Number(prompt(`대상 번호를 입력하세요. (1~${targets.length})`, '1')) - 1;
+    const target = targets[index];
+    if (!target) return alert('올바른 대상 번호를 입력하세요.');
+    const heads = Math.random() < 0.5;
+    if (heads) target.currentHp = Math.min(target.hp, target.currentHp + 50);
+    else applyDamage(target, 50);
+    playItemUseEffect(itemCard, null, handIdx);
+    emitMultiplayerEffect({ type: 'coin-effect', effectId: createEffectId('coin'), targetSide: useOnOpponent ? 'opponent' : 'own', targetIndex: index, heads, amount: 50, item: { name: itemCard.name, image: itemCard.image } });
+    consumeItem(handIdx, itemCard);
+    document.getElementById('battle-action-info').innerText = `[${itemCard.name}] ${heads ? '앞면! 50 회복' : '뒷면! 50 피해'} (${target.name})`;
+}
+
+function useReturnOpponentHandItem(handIdx) {
+    const itemCard = myHand[handIdx];
+    if (!itemCard) return;
+    playItemUseEffect(itemCard, null, handIdx);
+    emitMultiplayerEffect({ type: 'hand-reset', effectId: createEffectId('hand-reset'), item: { name: itemCard.name, image: itemCard.image } });
+    consumeItem(handIdx, itemCard);
+    document.getElementById('battle-action-info').innerText = `[${itemCard.name}] 사용! 상대 손패가 덱으로 돌아갔습니다.`;
 }
 
 function animateCardDraw(card) {
@@ -911,6 +1008,17 @@ function applyTargetItemToMonster(fIdx) {
         return;
     }
 
+    if (skill.type === 'survive_at_one') {
+        targetMonster.hyperFocusTurns = Number(skill.duration) || 2;
+        playItemUseEffect(itemCard, fIdx, pendingItemCardIndex);
+        myHand.splice(pendingItemCardIndex, 1);
+        playerTrash.push(itemCard);
+        pendingItemCardIndex = null;
+        document.getElementById('battle-action-info').innerText = `[${itemCard.name}] 사용! [${targetMonster.name}]의 HP가 ${targetMonster.hyperFocusTurns}턴 동안 1 미만으로 내려가지 않습니다.`;
+        renderBattleUI();
+        return;
+    }
+
     if (!targetMonster.equippedItems) targetMonster.equippedItems = [];
     if (targetMonster.equippedItems.some(i => i.id === itemCard.id)) {
         alert("이미 동일한 아이템이 장착되어 있습니다!");
@@ -976,7 +1084,7 @@ function dropItemToSpecificMonster(targetFIdx, e) {
             if (card.type === 'ITEM' || card.type === 'NORMAL_ITEM') {
                 const skill = card.skills && card.skills[0] ? card.skills[0] : {};
 
-                const consumableTypes = ['draw_monster', 'draw_random', 'redirect_attack', 'confuse_all'];
+                const consumableTypes = ['draw_monster', 'draw_random', 'redirect_attack', 'confuse_all', 'cleanse_all', 'coin_heal_or_damage', 'return_opponent_hand', 'survive_at_one'];
                 if (consumableTypes.includes(skill.type)) {
                     if (consumableItemUsedThisTurn[skill.type]) {
                         document.getElementById('battle-action-info').innerText = `[${card.name}] - 같은 종류의 소모형 아이템은 한 턴에 하나만 사용 가능합니다!`;
@@ -999,6 +1107,18 @@ function dropItemToSpecificMonster(targetFIdx, e) {
                     useConfuseAllItem(handIdx);
                     return;
                 }
+                if (skill.type === 'cleanse_all') {
+                    useCleanseAllItem(handIdx);
+                    return;
+                }
+                if (skill.type === 'coin_heal_or_damage') {
+                    usePositiveNegativeItem(handIdx);
+                    return;
+                }
+                if (skill.type === 'return_opponent_hand') {
+                    useReturnOpponentHandItem(handIdx);
+                    return;
+                }
 
                 pendingItemCardIndex = handIdx;
                 applyTargetItemToMonster(targetFIdx);
@@ -1018,6 +1138,8 @@ function dropItemToSpecificMonster(targetFIdx, e) {
                     };
 
                     myHand.splice(handIdx, 1);
+                    broadcastDeployEffect(playerField[targetFIdx], targetFIdx);
+                    emitMultiplayerEffect({ type: 'evolution', effectId: createEffectId('evolution'), fieldIndex: targetFIdx, card: playerField[targetFIdx] });
                     document.getElementById('battle-action-info').innerText = `✨ [${targetMonster.name}]이(가) [${card.name}](으)로 진화했습니다!`;
                     showFloatingEffect(targetFIdx, true, "진화 완료!", true);
                     renderBattleUI();
@@ -1088,13 +1210,29 @@ function updateDeckAndTrashUI() {
 
 function updateOpponentTrashUI() {
     const fieldZone = document.getElementById('opponent-field-zone');
+    let pileContainer = document.getElementById('opponent-pile-container');
+    if (!pileContainer) {
+        pileContainer = document.createElement('div');
+        pileContainer.id = 'opponent-pile-container';
+        fieldZone.appendChild(pileContainer);
+    }
+    let deckPile = document.getElementById('opponent-deck-pile');
+    if (!deckPile) {
+        deckPile = document.createElement('div');
+        deckPile.id = 'opponent-deck-pile';
+        deckPile.classList.add('deck-pile', 'opponent-deck-pile');
+        pileContainer.appendChild(deckPile);
+    }
+    const opponentDeckCount = Number(window.multiplayerOpponentDeckCount);
+    deckPile.innerHTML = `상대 덱<br>(${Number.isFinite(opponentDeckCount) ? opponentDeckCount : '?'}장)`;
+
     let existingTrash = document.getElementById('opponent-trash-pile');
     if (!existingTrash) {
         const trash = document.createElement('div');
         trash.id = 'opponent-trash-pile';
         trash.classList.add('deck-pile', 'trash-pile');
         trash.onclick = () => openTrashModal(opponentTrash, '상대 트레쉬 (무덤)');
-        fieldZone.appendChild(trash);
+        pileContainer.appendChild(trash);
         existingTrash = trash;
     }
     existingTrash.innerHTML = `상대 트레쉬<br>(${opponentTrash.length}장)<br><span style="font-size:9px; color:#bdc3c7;">클릭하여 보기</span>`;
@@ -1165,18 +1303,13 @@ function dropToField(e) {
                 document.getElementById('battle-action-info').innerText = "진화 카드는 대상 몬스터 카드 위에 직접 드래그해야 합니다!";
                 return;
             }
+            if (playerField.length >= 3) {
+                document.getElementById('battle-action-info').innerText = '필드에는 몬스터를 최대 3장까지 배치할 수 있습니다.';
+                return;
+            }
 
             myHand.splice(handIdx, 1);
-            playerField.push({
-                ...card,
-                currentHp: card.hp,
-                shieldTurns: 0,
-                shieldPercent: 0,
-                equippedItems: [],
-                damageBonus: 0,
-                damageReduction: 0,
-                turnHeal: 0
-            });
+            playerField.push(createBattleMonster(card));
             const deployedIndex = playerField.length - 1;
             requestAnimationFrame(() => animateMonsterDeploy(card, deployedIndex));
             broadcastDeployEffect(card, deployedIndex);
@@ -1190,16 +1323,8 @@ function dropToField(e) {
         if (dataStr !== "") {
             const card = myHand.splice(dataStr, 1)[0];
             if (card.type === 'ITEM' || card.type === 'NORMAL_ITEM' || card.type === 'EVOLUTION') return;
-            playerField.push({
-                ...card,
-                currentHp: card.hp,
-                shieldTurns: 0,
-                shieldPercent: 0,
-                equippedItems: [],
-                damageBonus: 0,
-                damageReduction: 0,
-                turnHeal: 0
-            });
+            if (playerField.length >= 3) return;
+            playerField.push(createBattleMonster(card));
             const deployedIndex = playerField.length - 1;
             requestAnimationFrame(() => animateMonsterDeploy(card, deployedIndex));
             broadcastDeployEffect(card, deployedIndex);
@@ -1377,7 +1502,7 @@ function tryAction(attackerCard, actionCallback, failedTurnCallback = finishActi
             () => {
                 // 자해해도 혼란은 유지됩니다.
                 const damage = Math.floor(attackerCard.hp * 0.2);
-                attackerCard.currentHp = Math.max(0, attackerCard.currentHp - damage);
+                applyDamage(attackerCard, damage);
                 document.getElementById('battle-action-info').innerText = `[${attackerCard.name}]이(가) 혼란으로 자신을 공격했습니다! (-${damage} HP, 혼란 유지)`;
 
                 const pIdx = playerField.indexOf(attackerCard);
@@ -1457,7 +1582,7 @@ function executeTargetSkillLogic(pIdx, sIdx, targetOIdx) {
     }
 
     const skill = attacker.skills[sIdx];
-    const bonusDmg = attacker.damageBonus || 0;
+    const bonusDmg = (attacker.damageBonus || 0) + passiveDamageBonus(attacker);
     const damageEffects = [];
     const deathEffects = [];
 
@@ -1473,7 +1598,7 @@ function executeTargetSkillLogic(pIdx, sIdx, targetOIdx) {
         let actualDamage = 0;
         if (typeof skill.damage === 'number' && skill.damage > 0) {
             actualDamage = calculateDamage(skill.damage + bonusDmg, target, attacker);
-            target.currentHp = Math.max(0, target.currentHp - actualDamage);
+            applyDamage(target, actualDamage);
             damageEffects.push({ target, targetIndex: targetOIdx, damage: actualDamage });
         }
 
@@ -1506,7 +1631,7 @@ function executeTargetSkillLogic(pIdx, sIdx, targetOIdx) {
 
         opponentField.forEach((target, oIdx) => {
             const actualDamage = calculateDamage(totalDmg, target, attacker);
-            target.currentHp = Math.max(0, target.currentHp - actualDamage);
+            applyDamage(target, actualDamage);
             damageEffects.push({ target, targetIndex: oIdx, damage: actualDamage });
 
             if (actualDamage > 0 && target.isSleep) {
@@ -1530,7 +1655,7 @@ function executeTargetSkillLogic(pIdx, sIdx, targetOIdx) {
 
         const baseDmg = typeof skill.damage === 'number' ? skill.damage : 10;
         const totalDmg = calculateDamage(baseDmg + bonusDmg, target, attacker);
-        target.currentHp = Math.max(0, target.currentHp - totalDmg);
+        applyDamage(target, totalDmg);
         damageEffects.push({ target, targetIndex: targetOIdx, damage: totalDmg });
 
         if (totalDmg > 0 && target.isSleep) {
@@ -1587,6 +1712,22 @@ function calculateDamage(baseDmg, target, attacker) {
     }
 
     return Math.max(0, actualDamage);
+}
+
+function passiveDamageBonus(monster) {
+    const passive = monster?.passive;
+    if (passive?.type !== 'equipment_damage_bonus') return 0;
+    return (monster.equippedItems?.length || 0) * (Number(passive.amountPerItem) || 0);
+}
+
+function applyDamage(target, amount) {
+    const minimumHp = target?.hyperFocusTurns > 0 ? 1 : 0;
+    target.currentHp = Math.max(minimumHp, target.currentHp - Math.max(0, Number(amount) || 0));
+}
+
+function clearNegativeStatuses(monster) {
+    ['isSleep', 'isParalyzed', 'isConfused', 'isBurned', 'isPoisoned'].forEach(key => delete monster[key]);
+    ['sleepTurns', 'paralyzedTurns', 'confusedTurns'].forEach(key => delete monster[key]);
 }
 
 function applyStatusEffect(target, statusType, duration) {
@@ -1829,7 +1970,7 @@ function processStatusRecoveryQueue(queue, index, doneCallback) {
     }
 
     // 피해를 먼저 적용합니다.
-    monster.currentHp = Math.max(0, monster.currentHp - effect.damage);
+    applyDamage(monster, effect.damage);
     const monsterIndex = field.indexOf(monster);
     renderBattleUI();
 
@@ -1909,6 +2050,7 @@ function endMyTurn() {
     updateTurnIndicator();
     const passiveHealEffects = [];
     playerField.forEach(p => {
+        if (p.hyperFocusTurns > 0) p.hyperFocusTurns--;
         if (p.shieldTurns > 0) p.shieldTurns--;
         if (p.turnHeal && p.currentHp > 0 && !p.isSleep) {
             const previousHp = p.currentHp;
@@ -2018,7 +2160,7 @@ function dummyTurnAction() {
             if (targetMonster.damageReduction) totalBotDmg = Math.max(0, totalBotDmg - targetMonster.damageReduction);
             if (targetMonster.shieldTurns > 0) totalBotDmg = Math.floor(totalBotDmg * (1 - targetMonster.shieldPercent / 100));
 
-            targetMonster.currentHp = Math.max(0, targetMonster.currentHp - totalBotDmg);
+            applyDamage(targetMonster, totalBotDmg);
             document.getElementById('battle-action-info').innerText = `상대 [${randomBot.name}]의 공격! [${targetMonster.name}]이(가) ${totalBotDmg} 데미지를 입었습니다.`;
 
             if (targetMonster.currentHp <= 0) {

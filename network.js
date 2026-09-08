@@ -12,9 +12,10 @@ function ensureMultiplayerUI() {
     <div id="multiplayer-overlay">
       <div class="multiplayer-panel">
         <h2>온라인 멀티플레이</h2>
-        <p id="multiplayer-status">방을 만들거나 참가하세요.</p>
+        <p id="multiplayer-status">빠른 매치를 찾거나 방을 만들고 참가하세요.</p>
         <input id="multiplayer-room-code" maxlength="6" placeholder="방 코드 6자리">
         <div class="multiplayer-buttons">
+          <button id="quick-match-btn">빠른 매치</button>
           <button id="create-room-btn">방 만들기</button>
           <button id="join-room-btn">방 참가</button>
           <button id="close-multiplayer-btn" class="back-btn">닫기</button>
@@ -23,6 +24,7 @@ function ensureMultiplayerUI() {
     </div>`);
   document.getElementById('create-room-btn').onclick = createMultiplayerRoom;
   document.getElementById('join-room-btn').onclick = joinMultiplayerRoom;
+  document.getElementById('quick-match-btn').onclick = joinMatchmaking;
   document.getElementById('close-multiplayer-btn').onclick = closeMultiplayerUI;
 }
 
@@ -48,8 +50,24 @@ function connectSocket() {
   socket.on('battle:fx', receiveMultiplayerEffect);
   socket.on('room:notice', message => setMultiplayerStatus(message));
   socket.on('battle:started', () => { multiplayerStarted = true; });
+  socket.on('matchmaking:waiting', () => setMultiplayerStatus('빠른 매치에서 상대를 찾는 중...'));
+  socket.on('matchmaking:matched', ({ roomCode }) => {
+    multiplayerRoom = roomCode;
+    setMultiplayerStatus(`상대를 찾았습니다! 방 ${roomCode}`);
+  });
   socket.on('disconnect', () => setMultiplayerStatus('서버 연결이 끊어졌습니다.'));
   return socket;
+}
+function joinMatchmaking() {
+  validateMultiplayerDeck(() => connectSocket().emit('matchmaking:join', { name: playerNickname }));
+}
+
+function validateMultiplayerDeck(onValid) {
+  const client = connectSocket();
+  client.emit('battle:validate-deck', { deck: myDeck.map(card => ({ id: card.id })) }, result => {
+    if (result?.ok) return onValid();
+    setMultiplayerStatus(`온라인 대전에는 검증된 카드가 ${result?.minimum || 3}장 이상 필요합니다. (현재 ${result?.count || 0}장)`);
+  });
 }
 function openMultiplayerUI() {
   if (!myDeck.length) return alert('먼저 덱을 구성해주세요.');
@@ -65,25 +83,26 @@ function setMultiplayerStatus(message) {
   if (el) el.textContent = message;
 }
 function createMultiplayerRoom() {
-  connectSocket().emit('room:create', { name: playerNickname }, result => {
+  validateMultiplayerDeck(() => connectSocket().emit('room:create', { name: playerNickname }, result => {
     if (!result.ok) return setMultiplayerStatus(result.message);
     multiplayerRoom = result.roomCode;
     document.getElementById('multiplayer-room-code').value = result.roomCode;
     setMultiplayerStatus(`방 코드 ${result.roomCode}, 상대를 기다리는 중...`);
-  });
+  }));
 }
 function joinMultiplayerRoom() {
   const roomCode = document.getElementById('multiplayer-room-code').value.trim().toUpperCase();
-  connectSocket().emit('room:join', { roomCode, name: playerNickname }, result => {
+  validateMultiplayerDeck(() => connectSocket().emit('room:join', { roomCode, name: playerNickname }, result => {
     if (!result.ok) return setMultiplayerStatus(result.message);
     multiplayerRoom = result.roomCode;
     setMultiplayerStatus(`방 ${result.roomCode}에 참가했습니다.`);
-  });
+  }));
 }
 function beginMultiplayerBattle() {
   gameMode = 'multiplayer';
   multiplayerStarted = false;
   readySent = false;
+  syncPrivateCounts.lastSignature = null;
   closeMultiplayerUI();
   isMyTurn = false;
   initBattle();
@@ -101,6 +120,8 @@ function applyRoomState(state) {
   if (gameMode !== 'multiplayer') return;
 
   applyingNetworkState = true;
+  window.multiplayerOpponentDeckCount = Number(state.opponentDeckCount) || 0;
+  renderOpponentHand(state.opponentHandCount || 0);
   if (state.started) {
     multiplayerStarted = true;
     playerField = JSON.parse(JSON.stringify(state.myField || []));
@@ -125,6 +146,23 @@ function applyRoomState(state) {
   renderBattleUI();
   if (state.started) updateTurnIndicator();
   applyingNetworkState = false;
+}
+
+function renderOpponentHand(count) {
+  let zone = document.getElementById('opponent-hand-zone');
+  if (!zone) return;
+  const visible = Math.min(10, Math.max(0, Number(count) || 0));
+  zone.innerHTML = Array.from({ length: visible }, (_, index) =>
+    `<div class="opponent-card-back" style="--opponent-hand-index:${index}" aria-hidden="true"></div>`
+  ).join('');
+}
+
+function syncPrivateCounts() {
+  if (gameMode !== 'multiplayer' || applyingNetworkState || !socket || !multiplayerRoom) return;
+  const signature = `${myHand.length}:${battleDeck.length}`;
+  if (syncPrivateCounts.lastSignature === signature) return;
+  syncPrivateCounts.lastSignature = signature;
+  socket.emit('battle:private-counts', { handCount: myHand.length, deckCount: battleDeck.length });
 }
 function sendReadyIfNeeded() {
   if (gameMode !== 'multiplayer' || applyingNetworkState || readySent || isInitialDeploymentPhase || !playerField.length) return;
@@ -157,6 +195,24 @@ function receiveMultiplayerEffect(payload) {
   if (effect.type === 'item') return playRemoteItemEffect(effect);
   if (effect.type === 'draw') {
     playDrawSequenceEffect({ style: effect.drawStyle || 'normal', count: effect.count || 1, remote: true });
+    animateOpponentCardDraw(effect.count || 1);
+    return;
+  }
+  if (effect.type === 'coin-effect') {
+    const side = mapRemoteSide(effect.targetSide);
+    const targets = side === 'own' ? playerField : opponentField;
+    const target = targets?.[Number(effect.targetIndex) || 0];
+    if (!target) return;
+    if (effect.heads) target.currentHp = Math.min(target.hp, target.currentHp + (Number(effect.amount) || 50));
+    else target.currentHp = Math.max(target.hyperFocusTurns > 0 ? 1 : 0, target.currentHp - (Number(effect.amount) || 50));
+    renderBattleUI();
+    return;
+  }
+  if (effect.type === 'hand-reset') {
+    battleDeck.push(...myHand.splice(0));
+    shuffleArray(battleDeck);
+    renderBattleUI();
+    document.getElementById('battle-action-info').innerText = '상대 효과로 손패가 덱으로 돌아갔습니다.';
     return;
   }
   if (effect.type === 'deploy') {
@@ -179,12 +235,41 @@ function receiveMultiplayerEffect(payload) {
     showAwakeningEffect(effect.card || {}, true);
     return;
   }
+  if (effect.type === 'evolution') {
+    const index = Math.max(0, Math.min(2, Number(effect.fieldIndex) || 0));
+    const card = JSON.parse(JSON.stringify(effect.card || {}));
+    if (!card.id) return;
+    opponentField[index] = card;
+    renderBattleUI();
+    showAwakeningEffect(card, true);
+    return;
+  }
   if (effect.type === 'damage') {
     const isPlayerTarget = mapRemoteSide(effect.targetSide) === 'own';
     const attackerIsPlayer = mapRemoteSide(effect.attackerSide) === 'own';
     showDamageFloatingEffect(Number(effect.targetIndex), isPlayerTarget,
       Number(effect.damage) || 0, Number(effect.bonusDamage) || 0,
       effect.attackerIndex == null ? null : Number(effect.attackerIndex), attackerIsPlayer);
+  }
+}
+
+function animateOpponentCardDraw(count) {
+  const source = document.getElementById('opponent-deck-pile');
+  const destination = document.getElementById('opponent-hand-zone');
+  if (!source || !destination) return;
+  const from = source.getBoundingClientRect();
+  const to = destination.getBoundingClientRect();
+  const cards = Math.min(5, Math.max(1, Number(count) || 1));
+  for (let index = 0; index < cards; index++) {
+    const card = document.createElement('div');
+    card.className = 'opponent-card-back remote-draw-card';
+    card.style.cssText = `position:fixed;z-index:26000;left:${from.left + from.width / 2}px;top:${from.top + from.height / 2}px;margin:0;transform:translate(-50%,-50%);`;
+    document.body.appendChild(card);
+    card.animate([
+      { opacity: 0, transform: 'translate(-50%,-50%) scale(.55) rotateY(0deg)' },
+      { opacity: 1, offset: .2, transform: 'translate(-50%,-50%) scale(1.1) rotateY(180deg)' },
+      { opacity: 0, transform: `translate(${to.left + to.width / 2 - (from.left + from.width / 2)}px,${to.top + to.height / 2 - (from.top + from.height / 2)}px) scale(.7) rotateY(360deg)` }
+    ], { duration: 720, delay: index * 160, easing: 'cubic-bezier(.2,.8,.2,1)' }).onfinish = () => card.remove();
   }
 }
 
@@ -219,6 +304,7 @@ const originalRenderBattleUI = renderBattleUI;
 renderBattleUI = function () {
   originalRenderBattleUI();
   setTimeout(sendReadyIfNeeded, 0);
+  setTimeout(syncPrivateCounts, 0);
 };
 
 const originalEndMyTurn = endMyTurn;
@@ -228,6 +314,7 @@ endMyTurn = function () {
 
   const passiveHealEffects = [];
   playerField.forEach(p => {
+    if (p.hyperFocusTurns > 0) p.hyperFocusTurns--;
     if (p.shieldTurns > 0) p.shieldTurns--;
     if (p.redirectAttackTarget && p.redirectAttackDuration > 0) {
       p.redirectAttackDuration--;

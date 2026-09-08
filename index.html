@@ -57,6 +57,9 @@
             <div id="battle-board">
                 <div class="field-zone" id="opponent-field-zone">
                     <h3>상대: <span id="opponent-name">허수아비 봇</span></h3>
+                    <div class="opponent-hand-wrap">
+                        <div id="opponent-hand-zone" aria-label="상대 손패 (카드 뒷면)"></div>
+                    </div>
                     <div id="opponent-field-slots" class="multi-slot-container"></div>
                 </div>
 
@@ -81,7 +84,7 @@
 
     <!-- 순서 중요: Socket.IO → 게임 → 네트워크 → 배치 동기화 → 기능팩 -->
     <script src="/socket.io/socket.io.js"></script>
-    <script src="game.js?v=17"></script>
-    <script src="network.js?v=17"></script>
+    <script src="game.js?v=20"></script>
+    <script src="network.js?v=20"></script>
 </body>
 </html>
